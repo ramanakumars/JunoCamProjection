@@ -1,3 +1,19 @@
+'''
+        Copyright (C) 2020 Ramanakumar Sankar
+
+    This program is free software: you can redistribute it and/or modify
+        it under the terms of the GNU General Public License as published by
+            the Free Software Foundation, either version 3 of the License, or
+                (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of
+            MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+                GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+        along with this program.  If not, see <https://www.gnu.org/licenses/>.
+'''
 import numpy as np
 import matplotlib
 #matplotlib.use("Agg")
@@ -48,15 +64,16 @@ class Projector():
 
         self.frame_delay = float(intframe_delay[0])
 
-        ## number of strips
+        ''' number of strips '''
         self.nframelets  = int(self.metadata['LINES']/FRAME_HEIGHT)
 
 
-        ## number of RGB frames
+        ''' number of RGB frames '''
         self.nframes     = int(self.nframelets/3)
         
         self.load_kernels()
 
+        ''' calculate the start time '''
         self.start_et    = spice.str2et(self.start_utc)
 
         self.savefolder = "%s_proj/"%self.fname
@@ -97,6 +114,7 @@ class Projector():
         kernels.append(sclks[-1])
         kernels.append(lsks[-1])
 
+        ''' find the ck and spk kernels for the given date '''
         ckpattern = r'juno_sc_rec_([0-9]{6})_([0-9]{6})\S*'
         for ck in cks:
             fname = os.path.basename(ck)
@@ -123,6 +141,9 @@ class Projector():
             spice.furnsh(kernel)
 
     def process(self):
+        '''
+            Single core version of the projection function
+        '''
         RCam = CameraModel(2)
         GCam = CameraModel(1)
         BCam = CameraModel(0)
@@ -144,13 +165,17 @@ class Projector():
                 
                 eti   = self.start_et + cami.time_bias + \
                     (self.frame_delay+cami.iframe_delay)*n
-                ## calculate the spacecraft position in the 
-                ## Jupiter reference frame
+                '''
+                    calculate the spacecraft position in the 
+                    Jupiter reference frame
+                '''
                 state, _ = spice.spkezr('JUNO', eti, 'IAU_JUPITER', 'CN+S', 'JUPITER')
                 scloc    = state[:3]
 
-                ## calculate the transformation from instrument 
-                ## to jupiter barycenter
+                '''
+                    calculate the transformation from instrument 
+                    to jupiter barycenter
+                '''
                 cam2jup = spice.pxform('JUNO_JUNOCAM', 'IAU_JUPITER', eti)
                 
                 lats = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
@@ -205,13 +230,15 @@ class Projector():
                 self.lonmax = max([lonmax, self.lonmax])
 
     def process_n_c(self, n, ci):
-        
+        '''
+            Project a given frame and filter
+            used in the multi-core version
+        '''
         self.latmin =  1000.
         self.latmax = -1000.
         self.lonmin =  1000.
         self.lonmax = -1000.
 
-        #print("Frame: %d %s"%(n, FILTERS[ci]))
         cami  = CameraModel(ci)
         start = 3*FRAME_HEIGHT*n+ci*FRAME_HEIGHT
         end   = 3*FRAME_HEIGHT*n+(ci+1)*FRAME_HEIGHT
@@ -219,13 +246,17 @@ class Projector():
         
         eti   = self.start_et + cami.time_bias + \
             (self.frame_delay+cami.iframe_delay)*n
-        ## calculate the spacecraft position in the 
-        ## Jupiter reference frame
+        '''
+            calculate the spacecraft position in the 
+            Jupiter reference frame
+        '''
         state, _ = spice.spkezr('JUNO', eti, 'IAU_JUPITER', 'CN+S', 'JUPITER')
         scloc    = state[:3]
 
-        ## calculate the transformation from instrument 
-        ## to jupiter barycenter
+        '''
+            calculate the transformation from instrument 
+            to jupiter barycenter
+        '''
         cam2jup = spice.pxform('JUNO_JUNOCAM', 'IAU_JUPITER', eti)
         
         lats = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
@@ -244,8 +275,6 @@ class Projector():
             latmax = lats.flatten()[mask].max()
             lonmin = lons.flatten()[mask].min()
             lonmax = lons.flatten()[mask].max()
-            #print("{0:d} {1} Lat: {2:7.3f} {3:7.3f} Lon: {4:7.3f} {5:7.3f}".format(\
-            #    n, FILTERS[ci], latmin, latmax, lonmin, lonmax))
         else:
             latmin = self.latmin
             latmax = self.latmax
@@ -274,9 +303,14 @@ class Projector():
         self.lonmin = min([lonmin, self.lonmin])
         self.lonmax = max([lonmax, self.lonmax])
 
-        return 1
+        return (self.lonmin, self.lonmax, self.latmin, self.latmax)
 
     def project(self, x, y, cam, scloc, cam2jup, eti):
+        '''
+            projects a single pixel in the filter given by 
+            the cam object for a given spacecraft location
+            and et
+        '''
         xyvec = cam.pix2vec([x+0.5,y+0.5]).reshape(3)
 
         ## get the vector in the Jupiter frame
@@ -295,6 +329,10 @@ class Projector():
 
 
 class CameraModel():
+    '''
+        holds the camera model and filter specific
+        variables
+    '''
     def __init__(self, filt):
         self.filter  = filt
         self.id      = CAMERA_IDS[filt]
@@ -335,18 +373,23 @@ class CameraModel():
 
 
 def do_mp(image, meta, num_procs):
+    '''
+        do a multi-core projection of a given image
+    '''
     dummy_proj = Projector(image, meta)
 
     r = []
     pool = multiprocessing.Pool(processes=num_procs)
 
     done = np.zeros((dummy_proj.nframes, 3))
-    
+    extents = []
     print("Projecting framelets:")
     try:
         for n in range(dummy_proj.nframes):
             for ci in range(3):
                 def call(res, nn=n, cc=ci):
+                    extents.append(res)
+                    
                     done[nn,cc] = 1
                     progress = done.sum()/(done.size)
                     print("\r[%-20s] %.3f%%"%(int(progress*20)*'=', progress*100.), end='')
@@ -361,18 +404,33 @@ def do_mp(image, meta, num_procs):
     finally:
         pool.join()
 
-def create_RGB_frame(folder, extents, pixres=1./75., padding=3):
-    lonmin, lonmax, latmin, latmax = extents
+    extents = np.array(extents)
+    lonmin = np.min(extents[:,0])
+    lonmax = np.max(extents[:,1])
+    latmin = np.min(extents[:,2])
+    latmax = np.max(extents[:,3])
+    print()
+    print("Extents - lon: %.3f %.3f lat: %.3f %.3f"%(lonmin, lonmax, latmin, latmax))
+
+def create_RGB_frame(folder, extents=None, pixres=1./75., padding=10):
+    '''
+        given a folder of map-projected data, create an RGB image
+        in a lat/lon projection
+    '''
+    try:
+        lonmin, lonmax, latmin, latmax = extents
+    except:
+        lonmin, lonmax, latmin, latmax = [-180., 180., -90., 90.]
     newlon = np.arange(lonmin, lonmax, pixres)
     newlat = np.arange(latmin, latmax, pixres)
 
     nlat = newlat.shape[0]
     nlon = newlon.shape[0]
 
+    ''' create edges for the 2d histogram '''
     newlatbins = np.zeros(nlat+1)
     newlatbins[:-1] = newlat-pixres
     newlatbins[-1]  = newlat[-1] + pixres
-    
     newlonbins = np.zeros(nlon+1)
     newlonbins[:-1] = newlon-pixres
     newlonbins[-1]  = newlon[-1] + pixres
@@ -384,13 +442,14 @@ def create_RGB_frame(folder, extents, pixres=1./75., padding=3):
 
     mask = np.zeros_like(IMG[:,:,0])
     for ci, filt in enumerate(filters):
-        print(filt)
+        print("Processing %s filter"%filt)
         fnames = sorted(glob.glob('%s/*_proj_%s_*.nc'%(folder, filt)))
 
         lat = np.zeros((128, 1648, len(fnames)))
         lon = np.zeros((128, 1648, len(fnames)))
         img = np.zeros((128, 1648, len(fnames)))
 
+        ''' load the map projected data '''
         for i, fi in enumerate(fnames):
             data = nc.Dataset(fi, 'r')
 
@@ -409,10 +468,16 @@ def create_RGB_frame(folder, extents, pixres=1./75., padding=3):
         lon = lon.flatten()
         img = img.flatten()
 
+        ''' remove pixels that were not projected '''
         invmask = np.where((lat == -1000.))[0]
         lat = np.delete(lat, invmask)
         lon = np.delete(lon, invmask)
         img = np.delete(img, invmask)
+
+        ''' 
+            figure out pixels in the projected image that
+            were not in the original image
+        '''
 
         hist,_,_ = np.histogram2d(lon, lat, bins=(newlonbins, newlatbins))
 
@@ -421,6 +486,10 @@ def create_RGB_frame(folder, extents, pixres=1./75., padding=3):
         maskrow, maskcol = np.where(hist > 0)
         
         print("Cleaning up...")
+        ''' 
+            mask out artificafts where the value is extrapolated
+            from pixels that are too far away
+        '''
         for jj in range(maskrow.shape[0]):
             progress = jj/maskrow.shape[0]
             print("\r[%-20s] %d/%d"%(int(progress*20)*'=', jj, maskrow.shape[0]), end='')
@@ -434,37 +503,17 @@ def create_RGB_frame(folder, extents, pixres=1./75., padding=3):
     for i in range(3):
         IMG[:,:,i] = IMG[:,:,i]*mask[:]
 
+    ''' save the mask and the raw pixel values '''
     plt.imsave('mask.png', mask, cmap='gray', origin='lower')
-
     np.save("%s/raw.npy"%folder, IMG, allow_pickle=False)
 
-    plot_raw_img("%s/raw.npy"%folder)
-    return
+    IMG[np.isnan(IMG)] = 0.
+    IMG[IMG<0.] = 0.
 
-
-def plot_raw_img(file):
-    IMG = np.load(file, allow_pickle=False)
-    nlat, nlon, _ = IMG.shape
-    ''' clean up '''
-    newimg = np.zeros((nlat*nlon, 3), dtype=np.float)
-    imgR = IMG[:,:,0].flatten()
-    imgG = IMG[:,:,1].flatten()
-    imgB = IMG[:,:,2].flatten()
-
-    maskR = imgR!=0
-    maskG = imgG!=0
-    maskB = imgB!=0
-    mask  = (maskR&maskG&maskB)
-
-    newimg[mask,0] = imgR[mask]
-    newimg[mask,1] = imgG[mask]
-    newimg[mask,2] = imgB[mask]
-
-    newimg[np.isnan(newimg)] = 0.
-    newimg[newimg<0.] = 0.
-
-    IMG = newimg.reshape((nlat, nlon, 3))
     ''' normalize the image by the 95% percentile '''
     IMG = IMG/(np.percentile(IMG[IMG>0.], 95))
 
     plt.imsave('mosaic_RGB.png', IMG, origin='lower')
+    
+    return
+
