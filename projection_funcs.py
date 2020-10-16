@@ -20,10 +20,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import spiceypy as spice
 import netCDF4 as nc
-import json, glob, re, os
+import json, glob, re, os, sys
 import multiprocessing, time
 from scipy.interpolate import interp2d, griddata
-import ctypes, time
+import ctypes, time, signal
 
 ## load the C library to get the projection mask
 project_c = np.ctypeslib.load_library('project.so', os.path.dirname(__file__))
@@ -78,6 +78,10 @@ SQROOT = np.array((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
                    2143, 2175, 2207, 2239, 2271, 2303, 2335, 2367, 2399, 2431,
                    2463, 2495, 2527, 2559, 2591, 2623, 2655, 2687, 2719, 2751,
                    2783, 2815, 2847, 2879), dtype=np.double)
+
+def initializer():
+    """Ignore CTRL+C in the worker process."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 def decompand(image):
     data = np.array(255.*image, dtype=np.double)
@@ -286,8 +290,9 @@ class Projector():
                 pixres = dpix[dpix>0.].min()
 
             return (lats, lons, frame, scloc, eti, pixres)
-        except Exception as e:
-            raise e
+        except:
+            return
+
     
     def process(self, num_procs=1):
         print("%s"%self.fname)
@@ -311,17 +316,22 @@ class Projector():
 
         pixres = np.zeros(len(inpargs))
         
-        pool = multiprocessing.Pool(processes=num_procs)
-        r = pool.map_async(self.process_n_c, inpargs)
-        pool.close()
+        pool = multiprocessing.Pool(processes=num_procs, initializer=initializer)
+        try:
+            r = pool.map_async(self.process_n_c, inpargs)
+            pool.close()
 
-        tasks = pool._cache[r._job]
-        ninpt = len(inpargs)
-        while tasks._number_left > 0:
-            progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
-            print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
-            time.sleep(0.05)
-
+            tasks = pool._cache[r._job]
+            ninpt = len(inpargs)
+            while tasks._number_left > 0:
+                progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
+                print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
+                time.sleep(0.05)
+        except KeyboardInterrupt:
+            pool.terminate()
+            pool.join()
+            sys.exit()
+        
         print()
         pool.join()
 

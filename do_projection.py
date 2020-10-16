@@ -14,17 +14,25 @@
     You should have received a copy of the GNU General Public License
         along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
-import numpy as np
-import netCDF4 as nc
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from projection_funcs import Projector, map_project
-import cartopy.crs as ccrs
+import argparse
 
-for idi in [8943]:
+parser = argparse.ArgumentParser(description="Map projection of a single JunoCam image")
+parser.add_argument('id', nargs='+', type=int, help='4-digit ID of the image')
+parser.add_argument('-np', '--num_procs', type=int, default=1, help='number of processes to use')
+
+args = parser.parse_args()
+
+ids = args.id
+
+if(len(ids) > 0):
+    print("Projecting %d files with %d processors"%(len(ids), args.num_procs))
+else:
+    print("Projecting %d with %d processors"%(ids[0], args.num_procs))
+
+for idi in ids:
     projector = Projector("ImageSet/", "DataSet/%d-Metadata.json"%idi)
-    projector.process(14)
+    projector.process(args.num_procs)
     newlon = np.arange(projector.lonmin, projector.lonmax, 1./200.)
     newlat = np.arange(projector.latmin, projector.latmax, 1./200.)
 
