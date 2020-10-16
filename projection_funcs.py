@@ -21,72 +21,113 @@ import matplotlib.pyplot as plt
 import spiceypy as spice
 import netCDF4 as nc
 import json, glob, re, os
-import multiprocessing
+import multiprocessing, time
 from scipy.interpolate import interp2d, griddata
+import ctypes, time
+
+## load the C library to get the projection mask
+project_c = np.ctypeslib.load_library('project.so', os.path.dirname(__file__))
+
+image_mask_c = project_c.get_image_mask
+
+array_1d_int    = np.ctypeslib.ndpointer(dtype=np.int, ndim=1, flags='C_CONTIGUOUS')
+array_1d_double = np.ctypeslib.ndpointer(dtype=np.double, ndim=1, flags='C_CONTIGUOUS')
+array_2d_double = np.ctypeslib.ndpointer(dtype=np.double, ndim=2, flags='C_CONTIGUOUS')
+
+image_mask_c.argtypes = [array_1d_double, array_1d_double, ctypes.c_int, ctypes.c_int,\
+                         array_2d_double, array_2d_double, array_1d_double, ctypes.c_int, ctypes.c_int]
+image_mask_c.restype  = array_1d_int
+
+process_c    = project_c.process
+process_c.argtypes = [ctypes.c_double, ctypes.c_int, array_1d_double, \
+                      array_2d_double, array_2d_double, array_2d_double]
+
+## and the spice furnish function for the library
+furnish_c    = project_c.furnish
+furnish_c.argtypes = [ctypes.c_char_p]
 
 KERNEL_DATAFOLDER = "/home/local/Isis/data/juno/kernels/"
 
-IMAGE_HEIGHT = 15360
 FRAME_HEIGHT = 128
 FRAME_WIDTH  = 1648
 
-''' filter ids for B, G and R '''
-FILTERS     = ['B', 'G', 'R']
+## filter ids for B, G and R 
+FILTERS     = ['B','G','R']
 CAMERA_IDS  = [-61501, -61502, -61503]
 
-''' functions to obtain positions in JUNOCAM frame '''
-def pix2vec(px, filt):
-    camx = px[0] - cx[filt]
-    camy = px[1] - cy[filt]
-    cam = undistort([camx, camy], filt)
-    v   = np.array([cam[0], cam[1], f1[filt]])
+## for decompanding -- taken from Kevin Gill's github page 
+SQROOT = np.array((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                   16, 17, 18, 19, 20, 21, 22, 23, 25, 27, 29, 31, 33, 35, 37, 39,
+                   41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63, 67, 71, 75,
+                   79, 83, 87, 91, 95, 99, 103, 107, 111, 115, 119, 123, 127, 131,
+                   135, 139, 143, 147, 151, 155, 159, 163, 167, 171, 175, 179,
+                   183, 187, 191, 195, 199, 203, 207, 211, 215, 219, 223, 227,
+                   231, 235, 239, 243, 247, 255, 263, 271, 279, 287, 295, 303,
+                   311, 319, 327, 335, 343, 351, 359, 367, 375, 383, 391, 399,
+                   407, 415, 423, 431, 439, 447, 455, 463, 471, 479, 487, 495,
+                   503, 511, 519, 527, 535, 543, 551, 559, 567, 575, 583, 591,
+                   599, 607, 615, 623, 631, 639, 647, 655, 663, 671, 679, 687,
+                   695, 703, 711, 719, 727, 735, 743, 751, 759, 767, 775, 783,
+                   791, 799, 807, 815, 823, 831, 839, 847, 855, 863, 871, 879,
+                   887, 895, 903, 911, 919, 927, 935, 943, 951, 959, 967, 975,
+                   983, 991, 999, 1007, 1023, 1039, 1055, 1071, 1087, 1103, 1119,
+                   1135, 1151, 1167, 1183, 1199, 1215, 1231, 1247, 1263, 1279,
+                   1295, 1311, 1327, 1343, 1359, 1375, 1391, 1407, 1439, 1471,
+                   1503, 1535, 1567, 1599, 1631, 1663, 1695, 1727, 1759, 1791,
+                   1823, 1855, 1887, 1919, 1951, 1983, 2015, 2047, 2079, 2111,
+                   2143, 2175, 2207, 2239, 2271, 2303, 2335, 2367, 2399, 2431,
+                   2463, 2495, 2527, 2559, 2591, 2623, 2655, 2687, 2719, 2751,
+                   2783, 2815, 2847, 2879), dtype=np.double)
 
-    return v
+def decompand(image):
+    data = np.array(255.*image, dtype=np.double)
+    ny, nx = data.shape
 
-def undistort(c, filt):
-    xd, yd = c[0], c[1]
-    for i in range(5):
-        r2 = (xd**2. + yd**2.)
-        dr = 1. + k1[filt]*r2 + k2[filt]*r2*r2
-        xd = c[0]/dr
-        yd = c[1]/dr
-    return (xd, yd)
+    data2 = data.copy()
+    for j in range(ny):
+        for i in range(nx):
+            data2[j,i] = SQROOT[int(round(data[j,i]))]
+
+    return data2
 
 class Projector():
-    def __init__(self, image, meta):
+    def __init__(self, imagefolder, meta):
         metafile      = open(meta, 'r')
         self.metadata = json.load(metafile)
-        self.fullimg  = plt.imread(image)
 
         self.start_utc = self.metadata['START_TIME']
         self.fname     = self.metadata['FILE_NAME'].replace('-raw.png','')
         intframe_delay = self.metadata['INTERFRAME_DELAY'].split(' ')
+        
+        self.fullimg  = plt.imread(imagefolder+"%s-raw.png"%self.fname)
+
+        self.sclat = float(self.metadata['SUB_SPACECRAFT_LATITUDE'])
+        self.sclon = float(self.metadata['SUB_SPACECRAFT_LONGITUDE'])
 
         self.frame_delay = float(intframe_delay[0])
 
-        ''' number of strips '''
+        ## number of strips 
         self.nframelets  = int(self.metadata['LINES']/FRAME_HEIGHT)
 
 
-        ''' number of RGB frames '''
+        ## number of RGB frames 
         self.nframes     = int(self.nframelets/3)
         
         self.load_kernels()
+        
+        self.re, _, self.rp = spice.bodvar(spice.bodn2c('JUPITER'), 'RADII', 3)
+        self.flattening = (self.re - self.rp)/self.re
 
-        ''' calculate the start time '''
+        ## calculate the start time 
         self.start_et    = spice.str2et(self.start_utc)
 
         self.savefolder = "%s_proj/"%self.fname
 
-        if not os.path.exists(self.savefolder):
-            os.makedirs(self.savefolder)
-            print("Folder was created: ", self.savefolder)
         metafile.close()
+
     
     def load_kernels(self):
-        ''' 
-        find and load the kernels for a specific date 
-        '''
+        ## find and load the kernels for a specific date 
         iks   = sorted(glob.glob(KERNEL_DATAFOLDER+"ik/juno_junocam_v*.ti"))
         cks   = sorted(glob.glob(KERNEL_DATAFOLDER+"ck/juno_sc_rec_*.bc"))
         spks1 = sorted(glob.glob(KERNEL_DATAFOLDER+"spk/spk_rec_*.bsp"))
@@ -104,18 +145,12 @@ class Projector():
 
         intdate = int("%s%s%s"%(yy,mm,dd))
 
-        kernels = []
-        ''' load the latest updates for these '''
-        kernels.append(iks[-1])
-        kernels.append(spks2[-1])
-        kernels.append(spks3[-1])
-        kernels.append(pcks[-1])
-        kernels.append(fks[-1])
-        kernels.append(sclks[-1])
-        kernels.append(lsks[-1])
 
-        ''' find the ck and spk kernels for the given date '''
+        kernels = []
+
+        ## find the ck and spk kernels for the given date 
         ckpattern = r'juno_sc_rec_([0-9]{6})_([0-9]{6})\S*'
+        nck = 0
         for ck in cks:
             fname = os.path.basename(ck)
             groups = re.findall(ckpattern, fname)
@@ -125,8 +160,24 @@ class Projector():
 
             if( (int(datestart) <= intdate) & (int(dateend) >= intdate) ):
                 kernels.append(ck)
+                nck += 1
         
+        ''' use the predicted kernels if there are no rec '''
+        if(nck == 0):
+            ckpattern = r'juno_sc_pre_([0-9]{6})_([0-9]{6})\S*'
+            for ck in cks:
+                fname = os.path.basename(ck)
+                groups = re.findall(ckpattern, fname)
+                if(len(groups) == 0):
+                    continue
+                datestart, dateend = groups[0]
+
+                if( (int(datestart) <= intdate) & (int(dateend) >= intdate) ):
+                    kernels.append(ck)
+                    nck += 1
+
         spkpattern = r'spk_rec_([0-9]{6})_([0-9]{6})\S*'
+        nspk = 0
         for spk in spks1:
             fname = os.path.basename(spk)
             groups = re.findall(spkpattern, fname)
@@ -136,198 +187,262 @@ class Projector():
 
             if( (int(datestart) <= intdate) & (int(dateend) >= intdate) ):
                 kernels.append(spk)
+                nspk += 1
+
+        ''' use the predicted kernels if there are no rec '''
+        if(nspk == 0):
+            spkpattern = r'spk_pre_([0-9]{6})_([0-9]{6})\S*'
+            for spk in spks1:
+                fname = os.path.basename(spk)
+                groups = re.findall(spkpattern, fname)
+                if(len(groups) == 0):
+                    continue
+                datestart, dateend = groups[0]
+
+                if( (int(datestart) <= intdate) & (int(dateend) >= intdate) ):
+                    kernels.append(spk)
+                    nspk += 1
+
+        if(nck*nspk == 0):
+            print("ERROR: Kernels not found for the date range!")
+
+        ## load the latest updates for these 
+        kernels.append(iks[-1])
+        kernels.append(spks2[-1])
+        kernels.append(spks3[-1])
+        kernels.append(pcks[-1])
+        kernels.append(fks[-1])
+        kernels.append(sclks[-1])
+        kernels.append(lsks[-1])
+
         self.kernels = kernels
         for kernel in self.kernels:
+            furnish_c(kernel.encode('ascii'))
             spice.furnsh(kernel)
 
-    def process(self):
-        '''
-            Single core version of the projection function
-        '''
-        RCam = CameraModel(2)
-        GCam = CameraModel(1)
-        BCam = CameraModel(0)
-
-        cams = [BCam, GCam, RCam]
-
-        self.latmin =  1000.
-        self.latmax = -1000.
-        self.lonmin =  1000.
-        self.lonmax = -1000.
-        
-        for n in range(self.nframes):
-            for ci in range(3):
-                print("Frame: %d %s"%(n, FILTERS[ci]))
-                cami  = cams[ci]
-                start = 3*FRAME_HEIGHT*n+ci*FRAME_HEIGHT
-                end   = 3*FRAME_HEIGHT*n+(ci+1)*FRAME_HEIGHT
-                frame = self.fullimg[start:end,:]
-                
-                eti   = self.start_et + cami.time_bias + \
-                    (self.frame_delay+cami.iframe_delay)*n
-                '''
-                    calculate the spacecraft position in the 
-                    Jupiter reference frame
-                '''
-                state, _ = spice.spkezr('JUNO', eti, 'IAU_JUPITER', 'CN+S', 'JUPITER')
-                scloc    = state[:3]
-
-                '''
-                    calculate the transformation from instrument 
-                    to jupiter barycenter
-                '''
-                cam2jup = spice.pxform('JUNO_JUNOCAM', 'IAU_JUPITER', eti)
-                
-                lats = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-                lons = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-                solar_corr = np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-                
-                for y in range(FRAME_HEIGHT):
-                    if(y%10==0):
-                        progress = (y/FRAME_HEIGHT)
-                        print("\r%d [%-20s] %.2f%%"%(n, int(progress*20)*'=', progress*100.), end='')
-                    for x in range(23, FRAME_WIDTH-17):
-                        solar_corr[y,x], lons[y,x], lats[y,x] = \
-                            self.project(x, y, cami, scloc, cam2jup, eti)
- 
-                mask = lats.flatten() != -1000.
-                
-                if(sum(mask) != 0):
-                    latmin = lats.flatten()[mask].min()
-                    latmax = lats.flatten()[mask].max()
-                    lonmin = lons.flatten()[mask].min()
-                    lonmax = lons.flatten()[mask].max()
-                    print(" Lat: {:7.3f} {:7.3f} Lon: {:7.3f} {:7.3f}".format(\
-                        latmin, latmax, lonmin, lonmax))
-                else:
-                    latmin = self.latmin
-                    latmax = self.latmax
-                    lonmin = self.lonmin
-                    lonmax = self.lonmax
-                    print()
-
-
-                ''' save these parameters to a NetCDF file so that we can plot it later '''
-                f = nc.Dataset('%s/%s_proj_%s_%d.nc'%(self.savefolder,self.fname, FILTERS[ci], n), 'w')
-
-                xdim     = f.createDimension('x',FRAME_WIDTH)
-                ydim     = f.createDimension('y',FRAME_HEIGHT)
-
-                ''' create the NetCDF variables '''
-                latVar  = f.createVariable('lat', 'float64', ('y','x'))
-                lonVar  = f.createVariable('lon', 'float64', ('y','x'))
-                imgVar  = f.createVariable('img', 'float64', ('y','x'))
-
-                latVar[:]  = lats[:]
-                lonVar[:]  = lons[:]
-                imgVar[:]  = frame[:]*solar_corr[:]
-
-                f.close()
-
-                self.latmin = min([latmin, self.latmin])
-                self.latmax = max([latmax, self.latmax])
-                self.lonmin = min([lonmin, self.lonmin])
-                self.lonmax = max([lonmax, self.lonmax])
-
-    def process_n_c(self, n, ci):
+    def process_n_c(self, inp):
         '''
             Project a given frame and filter
             used in the multi-core version
         '''
-        self.latmin =  1000.
-        self.latmax = -1000.
-        self.lonmin =  1000.
-        self.lonmax = -1000.
+        n, ci = inp
+        try:
+            self.latmin =  1000.
+            self.latmax = -1000.
+            self.lonmin =  1000.
+            self.lonmax = -1000.
 
-        cami  = CameraModel(ci)
-        start = 3*FRAME_HEIGHT*n+ci*FRAME_HEIGHT
-        end   = 3*FRAME_HEIGHT*n+(ci+1)*FRAME_HEIGHT
-        frame = self.fullimg[start:end,:]
+            cami  = CameraModel(ci)
+            start = 3*FRAME_HEIGHT*n+ci*FRAME_HEIGHT
+            end   = 3*FRAME_HEIGHT*n+(ci+1)*FRAME_HEIGHT
+            frame = self.fullimg[start:end,:]
+            eti   = self.start_et + cami.time_bias + \
+                (self.frame_delay+cami.iframe_delay)*n
+            '''
+                calculate the spacecraft position in the 
+                Jupiter reference frame
+            '''
+            state, _ = spice.spkezr('JUNO', eti, 'IAU_JUPITER', 'CN', 'JUPITER')
+            scloc    = state[:3]
+
+            '''
+                calculate the transformation from instrument 
+                to jupiter barycenter
+            '''
+            cam2jup = spice.pxform('JUNO_JUNOCAM', 'IAU_JUPITER', eti)
+            
+            lats = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
+            lons = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
+            solar_corr = np.ones((FRAME_HEIGHT, FRAME_WIDTH))
+            
+            '''
+            for y in range(FRAME_HEIGHT):
+                for x in range(23, FRAME_WIDTH-17):
+                    res = \
+                        self.project(x, y, cami, cam2jup, eti)
+                    solar_corr[y,x] = res[3]
+                    lons[y,x]       = res[4]
+                    lats[y,x]       = res[5]
+            '''
+            process_c(eti, ci, cam2jup.flatten(), lons, lats, solar_corr)
+
+            frame = decompand(frame[:])*solar_corr[:]
+
+            ''' 
+                find the resolution for each pixel and then calculate
+                the finest resolution of the slice
+            '''
+
+            dlats = np.gradient(lats)
+            dlons = np.gradient(lons)
+            
+            dlat = (dlats[0] + dlats[1])/2.
+            dlon = (dlons[0] + dlons[1])/2.
+            dpix = np.sqrt(dlat**2. + dlon**2.)
+
+            if(np.max(dpix) == 0.):
+                pixres = 0.
+            else:
+                pixres = dpix[dpix>0.].min()
+
+            return (lats, lons, frame, scloc, eti, pixres)
+        except Exception as e:
+            raise e
+    
+    def process(self, num_procs=1):
+        print("%s"%self.fname)
+        r = []
+
+        done = np.zeros((self.nframes, 3))
+        extents = []
+        print("Projecting framelets:")
         
-        eti   = self.start_et + cami.time_bias + \
-            (self.frame_delay+cami.iframe_delay)*n
-        '''
-            calculate the spacecraft position in the 
-            Jupiter reference frame
-        '''
-        state, _ = spice.spkezr('JUNO', eti, 'IAU_JUPITER', 'CN+S', 'JUPITER')
-        scloc    = state[:3]
+        lat       = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
+        lon       = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
+        decompimg = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
+        rawimg    = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
+        scloc     = np.zeros((self.nframes, 3))
+        et        = np.zeros(self.nframes)
 
-        '''
-            calculate the transformation from instrument 
-            to jupiter barycenter
-        '''
-        cam2jup = spice.pxform('JUNO_JUNOCAM', 'IAU_JUPITER', eti)
+        inpargs = []
+        for i in range(self.nframes):
+            for j in range(3):
+                inpargs.append((i,j))
+
+        pixres = np.zeros(len(inpargs))
         
-        lats = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-        lons = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-        solar_corr = np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-        
-        for y in range(FRAME_HEIGHT):
-            for x in range(23, FRAME_WIDTH-17):
-                solar_corr[y,x], lons[y,x], lats[y,x] = \
-                    self.project(x, y, cami, scloc, cam2jup, eti)
+        pool = multiprocessing.Pool(processes=num_procs)
+        r = pool.map_async(self.process_n_c, inpargs)
+        pool.close()
 
-        mask = lats.flatten() != -1000.
-        
-        if(sum(mask) != 0):
-            latmin = lats.flatten()[mask].min()
-            latmax = lats.flatten()[mask].max()
-            lonmin = lons.flatten()[mask].min()
-            lonmax = lons.flatten()[mask].max()
-        else:
-            latmin = self.latmin
-            latmax = self.latmax
-            lonmin = self.lonmin
-            lonmax = self.lonmax
+        tasks = pool._cache[r._job]
+        ninpt = len(inpargs)
+        while tasks._number_left > 0:
+            progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
+            print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
+            time.sleep(0.05)
 
-        ''' save these parameters to a NetCDF file so that we can plot it later '''
-        f = nc.Dataset('%s/%s_proj_%s_%d.nc'%(self.savefolder,self.fname, FILTERS[ci], n), 'w')
+        print()
+        pool.join()
 
+        results = r.get()
+        for jj in range(len(inpargs)):
+            lati, loni, frame, scloci, eti, pixres[jj] \
+                = results[jj]
+            i, ci = inpargs[jj]
+            startrow = 3*FRAME_HEIGHT*i + ci*FRAME_HEIGHT
+            endrow   = 3*FRAME_HEIGHT*i +(ci+1)*FRAME_HEIGHT
+
+            lat[i,2-ci,:,:] = lati
+            lon[i,2-ci,:,:] = loni
+            decompimg[i,2-ci,:,:] = frame#*scorri
+            rawimg[i,2-ci,:,:]    = self.fullimg[startrow:endrow,:]
+            scloc[i,:] = scloci
+            et[i]      = eti
+        '''
+        for jj in range(len(inpargs)):
+            t0 = time.perf_counter()
+            lati, loni, frame, scloci, eti, pixres[jj] \
+                = self.process_n_c(inpargs[jj])
+            print(time.perf_counter() - t0)
+            i, ci = inpargs[jj]
+            startrow = 3*FRAME_HEIGHT*i + ci*FRAME_HEIGHT
+            endrow   = 3*FRAME_HEIGHT*i +(ci+1)*FRAME_HEIGHT
+
+            lat[i,2-ci,:,:] = lati
+            lon[i,2-ci,:,:] = loni
+            decompimg[i,2-ci,:,:] = frame#*scorri
+            rawimg[i,2-ci,:,:]    = self.fullimg[startrow:endrow,:]
+
+            scloc[i,:] = scloci
+            et[i]      = eti
+        '''
+        pixres = pixres[pixres > 0.]
+
+        ## save these parameters to a NetCDF file so that we can plot it later 
+        f = nc.Dataset('%s.nc'%(self.fname), 'w')
+
+        framedim = f.createDimension('nframes', self.nframes)
+        coldim   = f.createDimension('ncolors', 3)
         xdim     = f.createDimension('x',FRAME_WIDTH)
         ydim     = f.createDimension('y',FRAME_HEIGHT)
+        xyzdim   = f.createDimension('xyz', 3)
 
-        ''' create the NetCDF variables '''
-        latVar  = f.createVariable('lat', 'float64', ('y','x'))
-        lonVar  = f.createVariable('lon', 'float64', ('y','x'))
-        imgVar  = f.createVariable('img', 'float64', ('y','x'))
+        ## create the NetCDF variables 
+        latVar     = f.createVariable('lat', 'float32', ('nframes', 'ncolors', 'y','x'))
+        lonVar     = f.createVariable('lon', 'float32', ('nframes', 'ncolors', 'y','x'))
+        imgVar     = f.createVariable('img', 'float64', ('nframes', 'ncolors', 'y','x'))
+        rawimgVar  = f.createVariable('rawimg', 'float64', ('nframes', 'ncolors', 'y','x'))
+        scVar      = f.createVariable('scloc', 'float64', ('nframes','xyz'))
+        etVar      = f.createVariable('et', 'float64', ('nframes'))
 
-        latVar[:]  = lats[:]
-        lonVar[:]  = lons[:]
-        imgVar[:]  = frame[:]*solar_corr[:]
-
+        latVar[:]    = lat[:]
+        lonVar[:]    = lon[:]
+        imgVar[:]    = decompimg[:]
+        rawimgVar[:] = rawimg[:]
+        scVar[:]     = scloc[:]
+        etVar[:]     = et[:]
+        
         f.close()
 
-        self.latmin = min([latmin, self.latmin])
-        self.latmax = max([latmax, self.latmax])
-        self.lonmin = min([lonmin, self.lonmin])
-        self.lonmax = max([lonmax, self.lonmax])
+        mask = (lat!=-1000.)&(lon!=-1000.)
+        self.lonmin = lon[mask].min()
+        self.lonmax = lon[mask].max()
+        self.latmin = lat[mask].min()
+        self.latmax = lat[mask].max()
 
-        return (self.lonmin, self.lonmax, self.latmin, self.latmax)
+        print("Extents - lon: %.3f %.3f lat: %.3f %.3f - lowest pixres: %.3f deg/pix"%(\
+                self.lonmin, self.lonmax, self.latmin, self.latmax, np.min(pixres)))
 
-    def project(self, x, y, cam, scloc, cam2jup, eti):
+    def project(self, x, y, cam, cam2jup, eti):
         '''
             projects a single pixel in the filter given by 
             the cam object for a given spacecraft location
             and et
         '''
-        xyvec = cam.pix2vec([x+0.5,y+0.5]).reshape(3)
+        xyvec = cam.pix2vec([x,y]).reshape(3)
 
         ## get the vector in the Jupiter frame
         pos_jup = np.matmul(cam2jup, xyvec)
+
+        if((x==50)&(y==50)):
+            print(xyvec)
         try:           
-            point, _, _ = spice.sincpt("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN+S", "JUNO", "IAU_JUPITER", pos_jup)
+            point, _, srfvec = spice.sincpt("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN", "JUNO", "IAU_JUPITER", pos_jup)
         except: 
-            return (1., -1000., -1000.)
-        dist, loni, lati = spice.reclat(point)
+            return (0., 0., 0., 1., -1000., -1000.)
+        alti, loni, lati = spice.reclat(point)
+        
+        dist = np.linalg.norm(srfvec)/1000.
 
-        _, _, phase, inc, emiss = spice.ilumin("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN+S", "JUNO", point)
+        #loni, lati, alti = spice.recpgr("JUPITER", point, self.re, self.flattening)
+    
+        _, _, phase, inc, emiss = spice.ilumin("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN", "JUNO", point)
 
-        solar_corr = 1./np.cos(inc)
+        mu0 = np.cos(inc)
+        mu  = np.cos(emiss)
+        ## Lambertian
+        #solar_corr = 1./mu0
+        
+        ## Minnaert k=1.1
+        #k = 1.1
+        #solar_corr = 1./((mu0**k)*(mu**(k-1)))
 
-        return (solar_corr, np.degrees(loni), np.degrees(lati))
+        ## Lommel-Seeliger
+        solar_corr = (2.*mu0)/(mu + mu0)#/(2.*mu0)
 
+        ## Area photometric function
+        #solar_corr = 2./(1. + np.cos(phase))
 
+        '''
+        if(inc < np.pi/2.):
+            solar_corr = 1./np.cos(inc)
+        else:
+            solar_corr = 1.
+        '''
+
+        return (phase, inc, emiss, solar_corr, np.degrees(loni), np.degrees(lati))
+    
 class CameraModel():
     '''
         holds the camera model and filter specific
@@ -337,8 +452,7 @@ class CameraModel():
         self.filter  = filt
         self.id      = CAMERA_IDS[filt]
 
-
-        ''' get the camera distortion data '''
+        ## get the camera distortion data 
         self.k1      = spice.gdpool('INS%s_DISTORTION_K1'%(self.id),0,32)[0]
         self.k2      = spice.gdpool('INS%s_DISTORTION_K2'%(self.id),0,32)[0]
         self.cx      = spice.gdpool('INS%s_DISTORTION_X'%( self.id),0,32)[0]
@@ -347,7 +461,7 @@ class CameraModel():
         self.psize   = spice.gdpool('INS%s_PIXEL_SIZE'%(   self.id),0,32)[0]
         self.f1 = self.flength/self.psize
 
-        ''' get the timing bias '''
+        ## get the timing bias 
         self.time_bias    = spice.gdpool('INS%s_START_TIME_BIAS'%self.id, 0,32)[0]
         self.iframe_delay = spice.gdpool('INS%s_INTERFRAME_DELTA'%self.id,0,32)[0]
 
@@ -371,149 +485,188 @@ class CameraModel():
             yd = c[1]/dr
         return (xd, yd)
 
+    def distort(self, c):
+        xd, yd = c[0], c[1]
+        r2 = (xd**2+yd**2)
+        dr = 1+self.k1*r2+self.k2*r2*r2
+        xd *= dr
+        yd *= dr
+        return [xd, yd]
 
-def do_mp(image, meta, num_procs):
-    '''
-        do a multi-core projection of a given image
-    '''
-    dummy_proj = Projector(image, meta)
+    def vec2pix(self, v):
+        alpha = v[2]/self.f1
+        cam   = [v[0]/alpha, v[1]/alpha]
+        cam   = self.distort(cam)
+        x     = cam[0] + self.cx
+        y     = cam[1] + self.cy
+        return (x,y)
 
-    r = []
-    pool = multiprocessing.Pool(processes=num_procs)
+def map_project_multi(files, pixres=1./25.):
+    nfiles = len(files)
 
-    done = np.zeros((dummy_proj.nframes, 3))
-    extents = []
-    print("Projecting framelets:")
-    try:
-        for n in range(dummy_proj.nframes):
-            for ci in range(3):
-                def call(res, nn=n, cc=ci):
-                    extents.append(res)
-                    
-                    done[nn,cc] = 1
-                    progress = done.sum()/(done.size)
-                    print("\r[%-20s] %.3f%%"%(int(progress*20)*'=', progress*100.), end='')
-                projnc = Projector(image, meta)
-                r.append(pool.apply_async(projnc.process_n_c, (n, ci,), callback=call))
-        pool.close()
-        for item in r:
-            item.wait()
-    except KeyboardInterrupt:
-        pool.terminate()
-        return
-    finally:
-        pool.join()
+    lats = []
+    lons = []
+    for i, file in enumerate(files):
+        dataset = nc.Dataset(file, 'r')
 
-    extents = np.array(extents)
-    lonmin = np.min(extents[:,0])
-    lonmax = np.max(extents[:,1])
-    latmin = np.min(extents[:,2])
-    latmax = np.max(extents[:,3])
-    print()
-    print("Extents - lon: %.3f %.3f lat: %.3f %.3f"%(lonmin, lonmax, latmin, latmax))
+        lati = dataset.variables['lat'][:]
+        loni = dataset.variables['lon'][:]
+        lats.append(lati)
+        lons.append(loni)
 
-def create_RGB_frame(folder, extents=None, pixres=1./75., padding=10):
-    '''
-        given a folder of map-projected data, create an RGB image
-        in a lat/lon projection
-    '''
-    try:
-        lonmin, lonmax, latmin, latmax = extents
-    except:
-        lonmin, lonmax, latmin, latmax = [-180., 180., -90., 90.]
+
+    latmin = np.min([lati[lati!=-1000].min() for lati in lats])
+    latmax = np.max([lati[lati!=-1000].max() for lati in lats])
+    lonmin = np.min([loni[loni!=-1000].min() for loni in lons])
+    lonmax = np.max([loni[loni!=-1000].max() for loni in lons])
+
+    print("Extents - lon: %.3f %.3f  lat: %.3f %.3f"%(lonmin, lonmax, latmin, latmax))
+    lats = None
+    lons = None
+
     newlon = np.arange(lonmin, lonmax, pixres)
     newlat = np.arange(latmin, latmax, pixres)
 
-    nlat = newlat.shape[0]
-    nlon = newlon.shape[0]
+    #LAT, LON = np.meshgrid(newlat, newlon)
 
-    ''' create edges for the 2d histogram '''
-    newlatbins = np.zeros(nlat+1)
-    newlatbins[:-1] = newlat-pixres
-    newlatbins[-1]  = newlat[-1] + pixres
-    newlonbins = np.zeros(nlon+1)
-    newlonbins[:-1] = newlon-pixres
-    newlonbins[-1]  = newlon[-1] + pixres
-
+    nlat = newlat.size
+    nlon = newlon.size 
+    
     IMG  = np.zeros((nlat, nlon, 3))
-    LAT, LON = np.meshgrid(newlat, newlon)
+    NPIX = np.zeros((nlat, nlon, 3), dtype=np.int)
 
-    filters = ['R','G','B']
+    print("Mosaic shape: %d x %d"%(nlon, nlat))
 
-    mask = np.zeros_like(IMG[:,:,0])
-    for ci, filt in enumerate(filters):
-        print("Processing %s filter"%filt)
-        fnames = sorted(glob.glob('%s/*_proj_%s_*.nc'%(folder, filt)))
+    for i, file in enumerate(files):
+        fname = files[i][:-3]
+        IMGi, mask = map_project(newlon, newlat, file, True, False)
 
-        lat = np.zeros((128, 1648, len(fnames)))
-        lon = np.zeros((128, 1648, len(fnames)))
-        img = np.zeros((128, 1648, len(fnames)))
+        #NPIX[:] = NPIX[:] + mask[:]
+        #IMG[:]  = IMG[:] + IMGi[:]
+        IMG[:]   = np.max([IMG, IMGi], axis=0)
 
-        ''' load the map projected data '''
-        for i, fi in enumerate(fnames):
-            data = nc.Dataset(fi, 'r')
+    plt.imsave("npix.png", NPIX)
 
-            lat[:,:,i] = data.variables['lat'][:]
-            lon[:,:,i] = data.variables['lon'][:]
-            img[:,:,i]  = data.variables['img'][:]
-            
-            flatlat = lat[:,:,i].flatten()
-            flatlon = lon[:,:,i].flatten()
+    #IMG[NPIX>0] = IMG[NPIX>0]/NPIX[NPIX>0]
 
-            maski   = flatlat != -1000.
-            flatlat = flatlat[maski]
-            flatlon = flatlon[maski]
-            
-        lat = lat.flatten()
-        lon = lon.flatten()
-        img = img.flatten()
+    ## save these parameters to a NetCDF file so that we can plot it later 
+    f = nc.Dataset('multi_proj_raw.nc', 'w')
 
-        ''' remove pixels that were not projected '''
-        invmask = np.where((lat == -1000.))[0]
-        lat = np.delete(lat, invmask)
-        lon = np.delete(lon, invmask)
-        img = np.delete(img, invmask)
+    xdim     = f.createDimension('x',nlon)
+    ydim     = f.createDimension('y',nlat)
+    colors   = f.createDimension('colors',3)
 
-        ''' 
-            figure out pixels in the projected image that
-            were not in the original image
-        '''
+    ##  create the NetCDF variables 
+    latVar  = f.createVariable('lat', 'float64', ('y'))
+    lonVar  = f.createVariable('lon', 'float64', ('x'))
+    imgVar  = f.createVariable('img', 'float64', ('y','x','colors'))
 
-        hist,_,_ = np.histogram2d(lon, lat, bins=(newlonbins, newlatbins))
+    latVar[:]  = newlat[:]
+    lonVar[:]  = newlon[:]
+    imgVar[:]  = IMG[:]
 
-        hist = hist.T
-
-        maskrow, maskcol = np.where(hist > 0)
-        
-        print("Cleaning up...")
-        ''' 
-            mask out artificafts where the value is extrapolated
-            from pixels that are too far away
-        '''
-        for jj in range(maskrow.shape[0]):
-            progress = jj/maskrow.shape[0]
-            print("\r[%-20s] %d/%d"%(int(progress*20)*'=', jj, maskrow.shape[0]), end='')
-            rowi = maskrow[jj]
-            coli = maskcol[jj]
-            mask[(rowi-padding):(rowi+padding),(coli-padding):(coli+padding)] = 1.
-        print()       
-        IMG[:,:,ci] = griddata((lon, lat), img, (LON, LAT), method='cubic').T
-        #interpfunc = interp2d(lon, lat, img, kind='linear', bounds_error=True, fill_value=0.)
-        #IMG[:,:,ci] = interpfunc(newlon, newlat)
-    for i in range(3):
-        IMG[:,:,i] = IMG[:,:,i]*mask[:]
-
-    ''' save the mask and the raw pixel values '''
-    plt.imsave('mask.png', mask, cmap='gray', origin='lower')
-    np.save("%s/raw.npy"%folder, IMG, allow_pickle=False)
-
-    IMG[np.isnan(IMG)] = 0.
-    IMG[IMG<0.] = 0.
-
-    ''' normalize the image by the 95% percentile '''
-    IMG = IMG/(np.percentile(IMG[IMG>0.], 95))
+    f.close()
+    
+    ## normalize the image by the 95% percentile 
+    IMG = IMG/(np.percentile(IMG[IMG>0.], 99.))
 
     plt.imsave('mosaic_RGB.png', IMG, origin='lower')
-    
-    return
+    return (newlon, newlat, IMG)
 
+def map_project(newlon, newlat, file, save=False, savemask=False):
+    fname   = file[:-3]
+    print("Projecting %s"%fname)
+
+    dataset = nc.Dataset(file, 'r')
+    lats = dataset.variables['lat'][:]
+    lons = dataset.variables['lon'][:]
+    imgs = dataset.variables['img'][:]
+    
+    scloci = dataset.variables['scloc'][:]
+    eti    = dataset.variables['et'][:]
+
+    nframes = eti.size
+
+    jup2cam = np.zeros((nframes, 9))
+
+    for j in range(nframes):
+        jup2cam[j,:] = \
+            spice.pxform("IAU_JUPITER", "JUNO_JUNOCAM", eti[j]).flatten()
+
+    nlat = newlat.size
+    nlon = newlon.size
+
+    IMG  = np.zeros((nlat, nlon, 3))
+    mask = np.zeros((nlat, nlon, 3))
+
+    LAT, LON = np.meshgrid(newlat, newlon)
+
+    for ci in range(3):
+        print("Processing %s"%(FILTERS[2-ci]))
+        lati = lats[:,ci,:,:].flatten()
+        loni = lons[:,ci,:,:].flatten()
+        imgi = imgs[:,ci,:,:].flatten()
+
+        invmask = np.where((lati==-1000.)|(loni==-1000.))[0]
+        ## remove pixels that were not projected
+        lat = np.delete(lati, invmask)
+        lon = np.delete(loni, invmask)
+        img = np.delete(imgi, invmask)
+
+        output = image_mask_c(np.radians(newlat), np.radians(newlon), nlat, nlon, \
+                           scloci, jup2cam, eti, nframes, 2-ci)
+        maski = ctypes.cast(output, ctypes.POINTER(ctypes.c_int*(nlat*nlon))).contents
+        maski = np.asarray(maski, dtype=np.int).reshape((nlat, nlon))
+
+        IMGI = griddata((lon, lat), img, (LON, LAT), method='cubic').T
+        
+        IMGI[np.isnan(IMGI)]  = 0.
+        IMGI[IMGI<0.] = 0.
+
+        print(IMGI.min(), IMGI.max())
+
+        maski[IMGI<0.001] = 0
+        ## save the mask and the raw pixel values
+        if(savemask):
+            plt.imsave('mask_%s_%s.png'%(fname, FILTERS[2-ci]), maski, cmap='gray', origin='lower')
+
+        IMG[:,:,ci]  = IMGI
+        mask[:,:,ci] = maski
+        
+        if(savemask):
+            plt.imsave("%s_%s.png"%(fname, FILTERS[2-ci]), IMGI, cmap='gray', origin='lower')
+
+    stackmask = np.min(mask,axis=2)
+    for ci in range(3):
+        IMG[:,:,ci] = stackmask*IMG[:,:,ci]
+        mask[:,:,ci] = stackmask
+
+    ## cleanup and do color correction
+    IMG[:,:,0] *= 0.902
+    IMG[:,:,2] *= 1.8879
+
+    ## saveout here to a mosaic
+    if(save):
+        ## save these parameters to a NetCDF file so that we can plot it later
+        f = nc.Dataset('%s_proj.nc'%fname, 'w')
+
+        xdim     = f.createDimension('x',nlon)
+        ydim     = f.createDimension('y',nlat)
+        colors   = f.createDimension('colors',3)
+
+        ## create the NetCDF variables
+        latVar  = f.createVariable('lat', 'float64', ('y'))
+        lonVar  = f.createVariable('lon', 'float64', ('x'))
+        imgVar  = f.createVariable('img', 'float64', ('y','x','colors'))
+
+        latVar[:]  = newlat[:]
+        lonVar[:]  = newlon[:]
+        imgVar[:]  = IMG[:]
+
+        f.close()
+        
+        ## normalize the image by the 95% percentile
+        IMG2 = IMG/(np.percentile(IMG[IMG>0.], 99.))
+        plt.imsave('%s_mosaic_RGB.png'%fname, IMG2, origin='lower')
+    
+    return (IMG, mask)
