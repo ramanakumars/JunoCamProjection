@@ -18,7 +18,6 @@
 #include<stdio.h>
 #include<math.h>
 #include<time.h>
-#include<omp.h>
 #include "cspice/include/SpiceUsr.h"
 
 #define JUPITER 599
@@ -176,7 +175,7 @@ void process_all(int height, int width, double start_time, double frame_delay, \
 	double disti, loni, lati, scorr, mu, mu0,
 		   phase, inc, emission, trgepoch, lt, eti;
 	double pix[2], pixvec[3], pos_jup[3], spoint[3], srfvec[3],
-		state[6], jup2cam_mat[3][3], jup2cam[9];
+		jup2cam_mat[3][3], jup2cam[9];
 	int nframes, found, start;
 
 	// calculate the number of framelets in the image
@@ -194,7 +193,7 @@ void process_all(int height, int width, double start_time, double frame_delay, \
 		eti = start_time + cameras[0].time_bias + \
 			(frame_delay + cameras[0].iframe_delay)*( (double) i);
 
-		spkezr_c("JUNO", eti, "IAU_JUPITER", "CN", "JUPITER", state, &lt);
+		spkpos_c("JUNO", eti, "IAU_JUPITER", "CN", "JUPITER", scloc+i*3, &lt);
 
 		// calculate the transformation matrix for this frame
 		pxform_c("JUNO_JUNOCAM", "IAU_JUPITER", eti, jup2cam_mat);
@@ -207,9 +206,9 @@ void process_all(int height, int width, double start_time, double frame_delay, \
 		}
 
 		// save the location and time to the output array
-		scloc[i*3+0] = state[0];
-		scloc[i*3+1] = state[1];
-		scloc[i*3+2] = state[2];
+		//scloc[i*3+0] = state[0];
+		//scloc[i*3+1] = state[1];
+		//scloc[i*3+2] = state[2];
 
 		et[i] = eti;
 
@@ -309,10 +308,12 @@ void process(double eti, int cam, double *cam2jup,
 				ilumin_c("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN", "JUNO", spoint, \
 							&trgepoch, srfvec, &phase, &inc, &emission);
 
-				mu  = cos(emission);
+				//mu  = cos(emission);
 				mu0 = cos(inc);
 
-				scorri = 2.*mu0/(mu + mu0);
+				// lambertian correction
+				scorri = 1./mu0;
+				//scorri = 2.*mu0/(mu + mu0);
 
 
 				lati = lati*180./M_PI;

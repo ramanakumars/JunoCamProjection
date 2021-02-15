@@ -271,7 +271,6 @@ class Projector():
             process_c(eti, ci, cam2jup.flatten(), lons, lats, solar_corr)
 
             frame = decompand(frame[:])*solar_corr[:]
-
             ''' 
                 find the resolution for each pixel and then calculate
                 the finest resolution of the slice
@@ -349,24 +348,7 @@ class Projector():
             rawimg[i,2-ci,:,:]    = self.fullimg[startrow:endrow,:]
             scloc[i,:] = scloci
             et[i]      = eti
-        '''
-        for jj in range(len(inpargs)):
-            t0 = time.perf_counter()
-            lati, loni, frame, scloci, eti, pixres[jj] \
-                = self.process_n_c(inpargs[jj])
-            print(time.perf_counter() - t0)
-            i, ci = inpargs[jj]
-            startrow = 3*FRAME_HEIGHT*i + ci*FRAME_HEIGHT
-            endrow   = 3*FRAME_HEIGHT*i +(ci+1)*FRAME_HEIGHT
-
-            lat[i,2-ci,:,:] = lati
-            lon[i,2-ci,:,:] = loni
-            decompimg[i,2-ci,:,:] = frame#*scorri
-            rawimg[i,2-ci,:,:]    = self.fullimg[startrow:endrow,:]
-
-            scloc[i,:] = scloci
-            et[i]      = eti
-        '''
+        
         pixres = pixres[pixres > 0.]
 
         ## save these parameters to a NetCDF file so that we can plot it later 
@@ -403,55 +385,6 @@ class Projector():
 
         print("Extents - lon: %.3f %.3f lat: %.3f %.3f - lowest pixres: %.3f deg/pix"%(\
                 self.lonmin, self.lonmax, self.latmin, self.latmax, np.min(pixres)))
-
-    def project(self, x, y, cam, cam2jup, eti):
-        '''
-            projects a single pixel in the filter given by 
-            the cam object for a given spacecraft location
-            and et
-        '''
-        xyvec = cam.pix2vec([x,y]).reshape(3)
-
-        ## get the vector in the Jupiter frame
-        pos_jup = np.matmul(cam2jup, xyvec)
-
-        if((x==50)&(y==50)):
-            print(xyvec)
-        try:           
-            point, _, srfvec = spice.sincpt("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN", "JUNO", "IAU_JUPITER", pos_jup)
-        except: 
-            return (0., 0., 0., 1., -1000., -1000.)
-        alti, loni, lati = spice.reclat(point)
-        
-        dist = np.linalg.norm(srfvec)/1000.
-
-        #loni, lati, alti = spice.recpgr("JUPITER", point, self.re, self.flattening)
-    
-        _, _, phase, inc, emiss = spice.ilumin("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN", "JUNO", point)
-
-        mu0 = np.cos(inc)
-        mu  = np.cos(emiss)
-        ## Lambertian
-        #solar_corr = 1./mu0
-        
-        ## Minnaert k=1.1
-        #k = 1.1
-        #solar_corr = 1./((mu0**k)*(mu**(k-1)))
-
-        ## Lommel-Seeliger
-        solar_corr = (2.*mu0)/(mu + mu0)#/(2.*mu0)
-
-        ## Area photometric function
-        #solar_corr = 2./(1. + np.cos(phase))
-
-        '''
-        if(inc < np.pi/2.):
-            solar_corr = 1./np.cos(inc)
-        else:
-            solar_corr = 1.
-        '''
-
-        return (phase, inc, emiss, solar_corr, np.degrees(loni), np.degrees(lati))
     
 class CameraModel():
     '''
@@ -583,7 +516,7 @@ def map_project_multi(files, pixres=1./25.):
     plt.imsave('mosaic_RGB.png', IMG, origin='lower')
     return (newlon, newlat, IMG)
 
-def map_project(newlon, newlat, file, save=False, savemask=False):
+def map_project(newlon, newlat, file, gamma=1.0, save=False, savemask=False):
     fname   = file[:-3]
     print("Projecting %s"%fname)
 
@@ -628,7 +561,7 @@ def map_project(newlon, newlat, file, save=False, savemask=False):
         maski = ctypes.cast(output, ctypes.POINTER(ctypes.c_int*(nlat*nlon))).contents
         maski = np.asarray(maski, dtype=np.int).reshape((nlat, nlon))
 
-        IMGI = griddata((lon, lat), img, (LON, LAT), method='cubic').T
+        IMGI = griddata((lon, lat), img, (LON, LAT), method='linear').T
         
         IMGI[np.isnan(IMGI)]  = 0.
         IMGI[IMGI<0.] = 0.
@@ -643,7 +576,7 @@ def map_project(newlon, newlat, file, save=False, savemask=False):
         IMG[:,:,ci]  = IMGI
         mask[:,:,ci] = maski
         
-        if(savemask):
+        if(save):
             plt.imsave("%s_%s.png"%(fname, FILTERS[2-ci]), IMGI, cmap='gray', origin='lower')
 
     stackmask = np.min(mask,axis=2)
@@ -654,6 +587,8 @@ def map_project(newlon, newlat, file, save=False, savemask=False):
     ## cleanup and do color correction
     IMG[:,:,0] *= 0.902
     IMG[:,:,2] *= 1.8879
+    
+    IMG = IMG**gamma
 
     ## saveout here to a mosaic
     if(save):

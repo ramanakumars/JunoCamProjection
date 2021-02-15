@@ -14,12 +14,15 @@
     You should have received a copy of the GNU General Public License
         along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
-from projection_funcs import Projector, map_project
+import numpy as np
+from projection_funcs import Projector, map_project, map_project_multi
 import argparse
 
 parser = argparse.ArgumentParser(description="Map projection of a single JunoCam image")
 parser.add_argument('id', nargs='+', type=int, help='4-digit ID of the image')
 parser.add_argument('-np', '--num_procs', type=int, default=1, help='number of processes to use')
+parser.add_argument('-res', '--resolution', type=int, default=50, help='pixels per degree')
+parser.add_argument('-mos', '--mosaic', action='store_true', default=False, help='mosaic all frames together')
 
 args = parser.parse_args()
 
@@ -30,10 +33,25 @@ if(len(ids) > 0):
 else:
     print("Projecting %d with %d processors"%(ids[0], args.num_procs))
 
+if not args.mosaic:
+    print("Saving each file with a resolution of %d pixels per degree"%(args.resolution))
+else:
+    print("Saving a mosaic with a resolution of %d pixels per degree"%(args.resolution))
+
+fnames = []
+
 for idi in ids:
     projector = Projector("ImageSet/", "DataSet/%d-Metadata.json"%idi)
     projector.process(args.num_procs)
-    newlon = np.arange(projector.lonmin, projector.lonmax, 1./200.)
-    newlat = np.arange(projector.latmin, projector.latmax, 1./200.)
 
-    IMG, mask = map_project(newlon, newlat, "%s.nc"%projector.fname, save=True)
+    fnames.append(projector.fname+".nc")
+    
+    if not args.mosaic:
+        newlon = np.arange(projector.lonmin, projector.lonmax, 1./args.resolution)
+        newlat = np.arange(projector.latmin, projector.latmax, 1./args.resolution)
+        print("Mosaic size: %d x %d"%(newlon.size, newlat.size))
+        IMG, mask = map_project(newlon, newlat, "%s.nc"%projector.fname, gamma=1.5, save=True)
+if(len(fnames) > 1):
+    if(args.mosaic):
+        print("Mosaicing")
+        newlon, newlat, IMG = map_project_multi(fnames, pixres=1./args.resolution)
