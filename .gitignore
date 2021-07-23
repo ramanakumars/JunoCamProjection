@@ -14,8 +14,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -128,8 +126,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# output files
-*.npy
-*.nc
+
+# Data
+*.nc 
 *.png
 *.json
