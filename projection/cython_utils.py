@@ -17,7 +17,8 @@ image_mask_c.restype  = array_1d_int
 
 process_c    = project_c.process
 process_c.argtypes = [ctypes.c_double, ctypes.c_int, array_1d_double, \
-                      array_2d_double, array_2d_double, array_2d_double, array_2d_double]
+                      array_2d_double, array_2d_double, array_2d_double,\
+                      array_2d_double, array_2d_double]
 
 ## and the spice furnish function for the library
 furnish_c    = project_c.furnish

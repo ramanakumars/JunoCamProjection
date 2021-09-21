@@ -11,6 +11,13 @@
 
 double CY[3] = {158.48, 3.48, -151.52};
 
+double aperture = 1.;
+
+/* from https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/ik/juno_junocam_v03.ti */
+double pixel_size = 7.4e-6;
+double focal_length = 0.001095637;
+
+
 struct Camera {
 	double k1, k2, cx, cy, flength, psize, f1, time_bias, iframe_delay;
 };
@@ -304,15 +311,18 @@ void process_all(int height, int width, double start_time, double frame_delay, \
 
 
 void process(double eti, int cam, double *cam2jup, 
-		double *lon, double *lat, double *inclin, double *emis) {
-	double pix[2], spoint[3], srfvec[3], pixvec[3], pos_jup[3];
-	double disti, loni, lati, phase, inc, emission, trgepoch;
+		double *lon, double *lat, double *inclin, double *emis, double *fluxcal) {
+	double pix[2], spoint[3], srfvec[3], pixvec[3], pos_jup[3], scloc[3];
+	double disti, loni, lati, phase, inc, emission, trgepoch, lt, plate_scale, ang_size, footprint;
 	int found;
 
+	plate_scale = (1./focal_length)/(pixel_size);
 
 	struct Camera camera;
 
 	initialize_camera(&camera, cam);
+
+	spkpos_c("JUNO", eti, "IAU_JUPITER", "CN+S", "JUPITER", scloc, &lt);
 
 	for(int jj=0; jj<FRAME_HEIGHT; jj++) {
 		for(int ii=23; ii<FRAME_WIDTH-17; ii++) {
@@ -326,7 +336,7 @@ void process(double eti, int cam, double *cam2jup,
 			matmul3D(cam2jup, pixvec, pos_jup);
 
 			// find an intercept between the vector and the Jovian "surface"
-			sincpt_c("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN", \
+			sincpt_c("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN+S", \
 					"JUNO", "IAU_JUPITER", pos_jup,spoint, &trgepoch, srfvec, &found);
 
 			if(found) {			
@@ -336,7 +346,7 @@ void process(double eti, int cam, double *cam2jup,
 
 				// calculate the illumination angle to do 
 				// solar flux correction
-				ilumin_c("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN", "JUNO", spoint, \
+				ilumin_c("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN+S", "JUNO", spoint, \
 							&trgepoch, srfvec, &phase, &inc, &emission);
 
 				// lambertian correction
@@ -346,6 +356,17 @@ void process(double eti, int cam, double *cam2jup,
 
 				lati = lati*180./M_PI;
 				loni = loni*180./M_PI;
+
+				disti     = (spoint[0]-scloc[0])*(spoint[0]-scloc[0]);
+				disti    += (spoint[1]-scloc[1])*(spoint[1]-scloc[1]);
+				disti    += (spoint[2]-scloc[2])*(spoint[2]-scloc[2]);
+
+				ang_size  = M_PI*(aperture/disti)*(aperture/disti);
+				footprint = (plate_scale*disti/cos(emission));
+
+				fluxcal[jj*FRAME_WIDTH+ii] = 1./(ang_size*footprint);
+
+
 			} else {
 				inc      = 1000.;
 				emission = 1000.;

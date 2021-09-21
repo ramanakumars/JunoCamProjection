@@ -64,8 +64,8 @@ class Projector():
         process     : Driver for the projection that handles parallel processing
     '''
     def __init__(self, imagefolder, meta, kerneldir='.'):
-        metafile      = open(meta, 'r')
-        self.metadata = json.load(metafile)
+        with open(meta, 'r') as metafile:
+            self.metadata = json.load(metafile)
 
         self.start_utc = self.metadata['START_TIME']
         self.fname     = self.metadata['FILE_NAME'].replace('-raw.png','')
@@ -93,7 +93,6 @@ class Projector():
 
         self.savefolder = "%s_proj/"%self.fname
 
-        metafile.close()
 
     
     def load_kernels(self, KERNEL_DATAFOLDER):
@@ -188,7 +187,7 @@ class Projector():
 
         #if(nck*nspk == 0):
         #    print("ERROR: Kernels not found for the date range!")
-        assert nck*nspk > 0, "ERROR: Kernels not found for the given date range!"
+        assert nck*nspk > 0, "Kernels not found for the given date range!"
 
         ## load the latest updates for these 
         kernels.append(iks[-1])
@@ -257,16 +256,18 @@ class Projector():
             lons = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
             #solar_corr = np.ones((FRAME_HEIGHT, FRAME_WIDTH))
             incl  =  1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-            emis  =  1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
+            emis     =  1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
+            flux_cal =  np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
             
-            process_c(eti, ci, cam2jup.flatten(), lons, lats, incl, emis)
+            process_c(eti, ci, cam2jup.flatten(), lons, lats, incl, emis, flux_cal)
 
-            frame = decompand(frame[:])#*solar_corr[:]
+            #frame = decompand(frame[:])#*solar_corr[:]
             ''' 
                 find the resolution for each pixel and then calculate
                 the finest resolution of the slice
             '''
 
+            '''
             dlats = np.gradient(lats)
             dlons = np.gradient(lons)
             
@@ -278,8 +279,9 @@ class Projector():
                 pixres = 0.
             else:
                 pixres = dpix[dpix>0.].min()
-
-            return (lats, lons, frame, scloc, eti, pixres, incl, emis)
+            '''
+            pixres = 1.
+            return (lats, lons, scloc, eti, pixres, incl, emis, flux_cal)
         except Exception as e:
             raise(e)
             return
@@ -306,14 +308,33 @@ class Projector():
         lon       = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         decompimg = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         rawimg    = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
+        flux_cal  = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         incl      = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         emis      = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         scloc     = np.zeros((self.nframes, 3))
         et        = np.zeros(self.nframes)
 
+
+        ## flatfield and gain from Brian Swift's GitHub (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)
+        flatfield = np.array(io.imread(os.path.dirname(__file__)+'/cal/flatFieldsSmooth12to16.tiff'))
+        #gain      = np.array(io.imread(os.path.dirname(__file__)+'/cal/gainSmooth12to16.tiff'))
+
         inpargs = []
+        self.image = np.zeros_like(self.fullimg)
         for i in range(self.nframes):
             for j in range(3):
+                startrow = 3*FRAME_HEIGHT*i + j*FRAME_HEIGHT
+                endrow   = 3*FRAME_HEIGHT*i +(j+1)*FRAME_HEIGHT
+                
+
+                framei = decompand(self.fullimg[startrow:endrow,:])
+                flati  = flatfield[j*FRAME_HEIGHT:(j+1)*FRAME_HEIGHT,:]
+                #gaini  = gain[j*FRAME_HEIGHT:(j+1)*FRAME_HEIGHT,:]
+                flati[flati==0] = 1.
+                framei = framei/flati#*gaini
+                self.image[startrow:endrow,:] = framei
+                #framei = framei*gainSmooth12to16[j*FRAME_HEIGHT:(j+1)*FRAME_HEIGHT]
+
                 inpargs.append((i,j))
 
         pixres = np.zeros(len(inpargs))
@@ -327,7 +348,7 @@ class Projector():
             ninpt = len(inpargs)
             while tasks._number_left > 0:
                 progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
-                print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
+                print("\r[%-20s] %4.2f%%"%(int(progress*20)*'=', progress*100.), end='')
                 time.sleep(0.05)
         except KeyboardInterrupt:
             pool.terminate()
@@ -339,7 +360,7 @@ class Projector():
 
         results = r.get()
         for jj in range(len(inpargs)):
-            lati, loni, frame, scloci, eti, pixres[jj], mu0i, mui \
+            lati, loni, scloci, eti, pixres[jj], mu0i, mui, flux_cali \
                 = results[jj]
             i, ci = inpargs[jj]
             startrow = 3*FRAME_HEIGHT*i + ci*FRAME_HEIGHT
@@ -347,17 +368,20 @@ class Projector():
 
             lat[i,ci,:,:]       = lati
             lon[i,ci,:,:]       = loni
-            decompimg[i,ci,:,:] = frame#*scorri
+            decompimg[i,ci,:,:] = self.image[startrow:endrow,:]#*scorri
             rawimg[i,ci,:,:]    = self.fullimg[startrow:endrow,:]
             incl[i,ci,:,:]      = mu0i
             emis[i,ci,:,:]      = mui
+            flux_cal[i,ci,:,:]  = flux_cali
             scloc[i,:]            = scloci
             et[i]                 = eti
         
         pixres = pixres[pixres > 0.]
 
         ## save these parameters to a NetCDF file so that we can plot it later 
-        f = nc.Dataset('%s.nc'%(self.fname), 'w')
+        if not os.path.exists(NC_FOLDER):
+            os.mkdir(NC_FOLDER)
+        f = nc.Dataset('%s%s.nc'%(NC_FOLDER, self.fname), 'w')
 
         framedim = f.createDimension('nframes', self.nframes)
         coldim   = f.createDimension('ncolors', 3)
@@ -372,15 +396,17 @@ class Projector():
         incVar     = f.createVariable('inclination', 'float32', ('nframes', 'ncolors', 'y','x'))
         emiVar     = f.createVariable('emission', 'float32', ('nframes', 'ncolors', 'y','x'))
         rawimgVar  = f.createVariable('rawimg', 'uint8', ('nframes', 'ncolors', 'y','x'))
+        fluximgVar = f.createVariable('flux', 'float64', ('nframes', 'ncolors', 'y','x'))
         scVar      = f.createVariable('scloc', 'float64', ('nframes','xyz'))
         etVar      = f.createVariable('et', 'float64', ('nframes'))
 
-        latVar[:]    = lat[:]
-        lonVar[:]    = lon[:]
-        imgVar[:]    = decompimg[:]
-        rawimgVar[:] = np.asarray(rawimg[:]*255,dtype=np.uint8)
-        scVar[:]     = scloc[:]
-        etVar[:]     = et[:]
+        latVar[:]     = lat[:]
+        lonVar[:]     = lon[:]
+        imgVar[:]     = decompimg[:]
+        rawimgVar[:]  = np.asarray(rawimg[:]*255,dtype=np.uint8)
+        fluximgVar[:] = decompimg[:]*flux_cal
+        scVar[:]      = scloc[:]
+        etVar[:]      = et[:]
 
         incVar[:]    = incl
         emiVar[:]    = emis
@@ -396,121 +422,3 @@ class Projector():
         print("Extents - lon: %.3f %.3f lat: %.3f %.3f - lowest pixres: %.3f deg/pix"%(\
                 self.lonmin, self.lonmax, self.latmin, self.latmax, np.min(pixres)))
     
-class CameraModel():
-    '''
-        holds the camera model and filter specific
-        variables
-    '''
-    def __init__(self, filt):
-        self.filter  = filt
-        self.id      = CAMERA_IDS[filt]
-
-        ## get the camera distortion data 
-        self.k1      = spice.gdpool('INS%s_DISTORTION_K1'%(self.id),0,32)[0]
-        self.k2      = spice.gdpool('INS%s_DISTORTION_K2'%(self.id),0,32)[0]
-        self.cx      = spice.gdpool('INS%s_DISTORTION_X'%( self.id),0,32)[0]
-        self.cy      = spice.gdpool('INS%s_DISTORTION_Y'%( self.id),0,32)[0]
-        self.flength = spice.gdpool('INS%s_FOCAL_LENGTH'%( self.id),0,32)[0]
-        self.psize   = spice.gdpool('INS%s_PIXEL_SIZE'%(   self.id),0,32)[0]
-        self.f1 = self.flength/self.psize
-
-        ## get the timing bias 
-        self.time_bias    = spice.gdpool('INS%s_START_TIME_BIAS'%self.id, 0,32)[0]
-        self.iframe_delay = spice.gdpool('INS%s_INTERFRAME_DELTA'%self.id,0,32)[0]
-
-    ''' 
-    functions to obtain positions in JUNOCAM frame 
-    see: https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/ik/juno_junocam_v03.ti
-    '''
-    def pix2vec(self, px):
-        '''
-            Convert from pixel coordinate to vector in the 
-            JUNO_JUNOCAM reference frame
-
-            Parameters
-            ----------
-            px : array-like
-                x and y position of pixel centers in the camera
-
-            Output
-            ------
-            v : numpy.ndarray
-                vector in the JUNO_JUNOCAM reference frame
-        '''
-        camx = px[0] - self.cx
-        camy = px[1] - self.cy
-        cam = self.undistort([camx, camy])
-        v   = np.asarray([cam[0], cam[1], self.f1])
-        return v
-
-    def undistort(self, c):
-        '''
-            Removes the barrel distortion in the JunoCam image
-
-            Parameters
-            ----------
-            c : array-like
-                x and y position of pixel centers in the camera
-
-            Output
-            ------
-            xd : float
-                x position of the pixel after removing barrel distortion
-            yd : float
-                y position of the pixel after removing barrel distortion
-        '''
-        xd, yd = c[0], c[1]
-        for i in range(5):
-            r2 = (xd**2. + yd**2.)
-            dr = 1. + self.k1*r2 + self.k2*r2*r2
-            xd = c[0]/dr
-            yd = c[1]/dr
-        return (xd, yd)
-
-    def distort(self, c):
-        '''
-            Adds barrel distortion to the image
-
-            Parameters
-            ----------
-            c : array-like
-                x and y position of undistorted pixel centers in the camera
-
-            Output
-            ------
-            xd : float
-                x position of the pixel after adding barrel distortion
-            yd : float
-                y position of the pixel after adding barrel distortion
-        '''
-        xd, yd = c[0], c[1]
-        r2 = (xd**2+yd**2)
-        dr = 1+self.k1*r2+self.k2*r2*r2
-        xd *= dr
-        yd *= dr
-        return [xd, yd]
-
-    def vec2pix(self, v):
-        '''
-            Convert a vector in the JUNO_JUNOCAM reference frame
-            to pixel coordinates on the plate
-
-            Parameters
-            ----------
-            v : array-like
-                vector in the JUNO_JUNOCAM reference frame
-
-            Output
-            ------
-            x : float
-                x-center of the pixel in the plate
-            y : float
-                y-center of the pixel in the plate
-        '''
-        alpha = v[2]/self.f1
-        cam   = [v[0]/alpha, v[1]/alpha]
-        cam   = self.distort(cam)
-        x     = cam[0] + self.cx
-        y     = cam[1] + self.cy
-        return (x,y)
-
