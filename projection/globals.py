@@ -1,20 +1,19 @@
 import matplotlib
+import os
 #matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp2d, griddata
-import netCDF4 as nc
 import numpy as np
 from .cython_utils import *
-import spiceypy as spice
 import multiprocessing
 import multiprocessing.sharedctypes as sct
+from scipy.ndimage.filters import gaussian_filter
 from cartopy import crs as ccrs
 from skimage import exposure, color, io
 from skimage.segmentation import slic
 from skimage.future import graph
-from scipy.ndimage.filters import gaussian_filter
-
-
+import spiceypy as spice
+import netCDF4 as nc
 FRAME_HEIGHT = 128
 FRAME_WIDTH  = 1648
 

@@ -17,12 +17,46 @@ def initializer():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
-                      scorr_method='poly', load=False, **kwargs):
+                      scorr_method='fft', load=False, **kwargs):
+    '''
+        Project multiple images into one mosaic. Use `scorr_method` to 
+        do lighting correction so that there are no visible seams. 
+        Each image in the list is map projected in the same resolution and then 
+        interpolated to match the mosaic grid.
+
+
+        Parameters
+        ----------
+        files : list
+            list of files from the projection pipeline to mosaic
+        pixres : float
+            pixel resolution in degrees/pixel
+        num_procs : int
+            number of processors to use (used in the projection and interpolation)
+        extents : list (optional)
+            bounding box in the format [lonmin, lonmax, latmin, latmax] (in degrees)
+            set to None to let it automatically determine the extents from the extents
+            of all the images
+        scorr_method : string
+            lighting correction method to use:
+                - 'none': no correction
+                - 'simple': lambertian correction (output = input/cos(incidence))
+                - 'poly': fit a 5th order polynomial for the image brightness in (mu, mu0) space
+                - 'fft': use an FFT to correct for brightness variations in the image
+        load : bool
+            Set to `True` to load data from files (generated from previous run). 
+            Set to `False` to regenerate the image.
+        kwargs: arguments to pass to `map_project`
+    '''
+
     nfiles = len(files)
 
     lats = []
     lons = []
     incs = []
+
+    # Load all the files and get the lat/lon
+    # info as well as the image and lighting geometry
     for i, file in enumerate(files):
         with nc.Dataset(NC_FOLDER+file, 'r') as dataset:
             lati = dataset.variables['lat'][:]
@@ -32,10 +66,11 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
             lons.append(loni)
             incs.append(inci)
 
-
+    # mask out bad pixels
     masks   = [(lats[i]!=-1000)&(lons[i]!=-1000)&(np.abs(incs[i])<np.radians(85.)) for i in range(len(files))]
 
     if extents is None:
+        # determine the bounding box if the `extent` variable is not passed
         latmin = np.min([lats[i][masks[i]].min() for i in range(len(files))])
         latmax = np.max([lats[i][masks[i]].max() for i in range(len(files))])
         lonmin = np.min([lons[i][masks[i]].min() for i in range(len(files))])
@@ -46,7 +81,9 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     print("Extents - lon: %.3f %.3f  lat: %.3f %.3f"%(lonmin, lonmax, latmin, latmax))
     lats = None
     lons = None
+    incs = None
 
+    # create the uniform grid for mosaicing
     newlon = np.arange(lonmin, lonmax, pixres)
     newlat = np.arange(latmin, latmax, pixres)
 
@@ -55,47 +92,53 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     nlat = newlat.size
     nlon = newlon.size 
     
+    # create the arrays to hold the intermediary data
     IMG   = np.zeros((nlat, nlon, 3))
-    IMGs  = np.zeros((len(files), nlat, nlon, 3))
+    IMGs  = np.zeros((len(files), nlat, nlon, 3), dtype=np.float32)
     Ls    = np.zeros((len(files), nlat, nlon))
     INCLs = np.zeros((len(files), nlat, nlon))
     EMISs = np.zeros((len(files), nlat, nlon))
-    masks = np.zeros((len(files), nlat, nlon))
-    NPIX  = np.zeros((nlat, nlon, 3), dtype=np.int)
 
     print("Mosaic shape: %d x %d"%(nlon, nlat))
 
     for i, file in enumerate(files):
+        # generate the projection of each image in the mosaic
         fname = files[i][:-3]
-        _, IMGi, masks[i,:], INCLs[i,:], EMISs[i,:] = map_project(file, newlon=newlon, newlat=newlat,\
+        _, IMGi, _, INCLs[i,:], EMISs[i,:] = map_project(file, pixres=pixres, long=newlon, latg=newlat,\
                         save=True, savemask=True, num_procs=num_procs, \
                         scorr_method=scorr_method, load=load, ret_inc=True, **kwargs)
-
-        #NPIX[:] = NPIX[:] + mask[:]
-        #IMG[:]  = IMG[:] + IMGi[:]
-        #IMG[:]   = np.max([IMG, IMGi], axis=0)
+        # save the data and also get brightness information
         IMGs[i,:] = IMGi
         Ls[i,:]   = color.rgb2hsv(IMGi)[:,:,2]
 
     combine_method = kwargs.get('combine_method', 'max')
 
+    # experimental method (not recommended)
     if combine_method=='min_grad':
         Lx, Ly = np.gradient(Ls, axis=(1,2))
         Lxx = np.gradient(Lx, axis=1)
         Lyy = np.gradient(Ly, axis=2)
         delsqL = np.abs(Lx + Ly)
 
+    # get the overlap area, and correct for 
+    # brightness variations between overlap
+    # regions in different images
     npix    = np.sum(Ls>0.2, axis=0)
     overlap_mask = npix>1
 
+    # get the average value of the overlap
+    # region in each image
     ave_val = np.zeros(len(files))
     for i in range(len(files)):
         imgi = Ls[i,:][overlap_mask]
         ave_val[i] = (imgi[imgi>0.]).mean()
 
+    # get the average of the all overlaps
     ave_all = np.mean(ave_val)
     print(ave_val, ave_all)
 
+    # correct each image so that the overlap 
+    # regions have the same brightness
     for i in range(len(files)):
         IMGs[i,:] *= ave_all/ave_val[i]
 
@@ -109,17 +152,26 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         IMG = np.max(IMGs, axis=0)
         incem = None
     else:
+        # create a dummy lighting geometry variable
         incem = INCLs*EMISs
+
+        # remove regions of low lighting (even after 
+        # lighting correction)
         incem[IMGs.sum(axis=-1)<0.02] = np.nan
         print("Mosaicing image")
+        
+        # loop through every pixel and find the best value to assign to the mosaic
         for jj in range(IMG.shape[0]):
             print("\r[%-20s] %d/%d"%(int(jj/IMG.shape[0]*20.)*'=', jj, IMG.shape[0]), end='')
             for ii in range(IMG.shape[1]):
                 incemij = incem[:,jj,ii]
-                mask = ~np.isnan(incemij)&(Ls[:,jj,ii] > 0.2)&\
+                # the best pixel is one that actually saw that feature, is not too dim, 
+                # and does not have a low incidence angle
+                mask = ~np.isnan(incemij)&(Ls[:,jj,ii] > 0.5*Ls[:,jj,ii].max())&\
                     (INCLs[:,jj,ii]<np.radians(80))
                 nimgs = np.sum(mask)
                 if nimgs > 1:
+                    # set the value of the pixel in the mosaic
                     if combine_method=='min_grad':
                         IMG[jj,ii,:] = IMGs[np.argmin(delsqL[mask,jj,ii]),jj,ii,:]
                     else:
@@ -127,10 +179,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
                 elif nimgs > 0:
                     IMG[jj,ii,:] = IMGs[mask,jj,ii,:]
 
-
-    #IMG[NPIX>0] = IMG[NPIX>0]/NPIX[NPIX>0]
-
-    ## save these parameters to a NetCDF file so that we can plot it later 
+    # save these parameters to a NetCDF file so that we can plot it later 
     with nc.Dataset(NC_FOLDER+'multi_proj_raw.nc', 'w') as f:
         xdim     = f.createDimension('x',nlon)
         ydim     = f.createDimension('y',nlat)
@@ -138,12 +187,12 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         files    = f.createDimension('file',len(files))
 
         ##  create the NetCDF variables 
-        latVar   = f.createVariable('lat', 'float64', ('y'))
-        lonVar   = f.createVariable('lon', 'float64', ('x'))
-        imgVar   = f.createVariable('img', 'float64', ('y','x','colors'))
-        imgsVar  = f.createVariable('imgs', 'float64', ('file', 'y','x','colors'))
+        latVar   = f.createVariable('lat', 'float64', ('y'), zlib=True)
+        lonVar   = f.createVariable('lon', 'float64', ('x'), zlib=True)
+        imgVar   = f.createVariable('img', 'float64', ('y','x','colors'), zlib=True)
+        imgsVar  = f.createVariable('imgs', 'float64', ('file', 'y','x','colors'), zlib=True)
         if incem is not None:
-            incemVar = f.createVariable('incem', 'float64', ('file', 'y','x'))
+            incemVar = f.createVariable('incem', 'float64', ('file', 'y','x'), zlib=True)
 
         latVar[:]  = newlat[:]
         lonVar[:]  = newlon[:]
@@ -154,17 +203,23 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     
     ## normalize the image by the 99% percentile 
     IMG = IMG/(np.percentile(IMG[IMG>0.], 99.))
-
     IMG = np.clip(IMG, 0., 1.)
 
     plt.imsave(MOS_FOLDER+'mosaic_RGB.png', IMG, origin='lower')
     return (newlon, newlat, IMG)
 
-def map_project(file, newlon=None, newlat=None, pixres=None, num_procs=1, \
+
+def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
                 save=False, savemask=False, scorr_method='simple', load=False, ret_inc=False,
                 **kwargs):
     '''
-        Interpolate a single file onto a regular lon/lat grid
+        Interpolate a single file onto a regular lon/lat grid. By default, 
+        the images are created in a grid that is 5 degrees bigger than the
+        extent of the raw image observed by JunoCam. Then, this is interpolated
+        to fit the required mesh. This is in an effort to segment the mosaicing
+        process, where we can generate a set of map-projected images beforehand, 
+        and then do the mosaicing process afterwords, without wasting too much 
+        space with unnecessary data. 
 
         Parameters
         ----------
@@ -187,7 +242,20 @@ def map_project(file, newlon=None, newlat=None, pixres=None, num_procs=1, \
                     well for some images but does not handle terminators well)
             poly :   fit a 2nd order polynomial in mu and mu0 based on the 
                     brightness of the image 
+            fft : do a FFT-based high pass filter to remove low-frequency (large scale)
+                    variations in the brightness of the image. Use the colorspace
+                    variable to pass the colorspace that is used to get the brightness
+                    (e.g., V in HSV space, L in Lab space, etc.)
+            combination: you can combine several methods together. e.g., 'simple+fft'
+                    will run both the simple Lambertian and the FFT. (not recommended)
+        load : bool
+            Set to `True` to load data from files (generated from previous run). 
+            Set to `False` to regenerate the image.
+        ret_inc : bool
+            Set to `True` to return the incidence and emission angle data.
+        **kwargs : arguments to pass to the scorr functions
     '''
+    from scipy.interpolate import RegularGridInterpolator
     global shared_LON, shared_LAT, nlon, nlat 
 
     fname   = file[:-3]
@@ -217,32 +285,31 @@ def map_project(file, newlon=None, newlat=None, pixres=None, num_procs=1, \
 
     nframes = eti.shape[0]
 
-    if (newlon is None) and (newlat is None) and (pixres is not None):
+    if (pixres is not None):
         masks   = (lats!=-1000)&(lons!=-1000)&(np.abs(incl)<np.radians(89.))
         latmin = lats[masks].min()
         latmax = lats[masks].max()
         lonmin = lons[masks].min()
         lonmax = lons[masks].max()
+
+        # expand the domain slightly -- makes the FFT work better
+        #latmin = max([-90, latmin-5])
+        #latmax = min([90, latmax+5])
+        #lonmin = max([-180, lonmin-5])
+        #lonmax = min([180, lonmax+5])
+
         newlon = np.arange(lonmin, lonmax, pixres)
         newlat = np.arange(latmin, latmax, pixres)
         print("Limits: lon: %.3f %.3f  lat: %.3f %.3f  size: %d x %d"%(\
                 newlon.min(), newlon.max(), newlat.min(), newlat.max(), newlon.size, newlat.size))
-    elif (newlon is not None) and (newlat is not None):
-        pass
     else:
-        raise RuntimeError("Please provide either lat/lon or resolution")
+        raise RuntimeError("Please provide a resolution resolution")
 
     ## define the arrays to hold the new gridded data
     nlat = newlat.size
     nlon = newlon.size
     IMG  = np.zeros((nlat, nlon, 3))
     LAT, LON = np.meshgrid(newlat, newlon)
-    
-    ## create a shared memory object for LON/LAT
-    LON_ctypes = np.ctypeslib.as_ctypes(LON)
-    shared_LON = sct.RawArray(LON_ctypes._type_, LON_ctypes)
-    LAT_ctypes = np.ctypeslib.as_ctypes(LAT)
-    shared_LAT = sct.RawArray(LAT_ctypes._type_, LAT_ctypes)
 
     ## get the image mask where no data exists
     ## this is created to remove errors from interpolation
@@ -255,25 +322,33 @@ def map_project(file, newlon=None, newlat=None, pixres=None, num_procs=1, \
         maski = ctypes.cast(output, ctypes.POINTER(ctypes.c_int*(nlat*nlon))).contents
         maski = np.asarray(maski, dtype=np.int).reshape((nlat, nlon))
         np.save(NPY_FOLDER + "%s_mask.npy"%fname, maski)
-
+    
     ## save the mask and the raw pixel values if needed
     if(savemask):
         plt.imsave(RGB_FOLDER+'mask_%s.png'%(fname), maski, vmin=0., vmax=1., cmap='gray', origin='lower')
 
+    # loop through each color and create that color band in the projection
     for ci in range(3):
         print("Processing %s"%(FILTERS[ci]))
         filteriname = NPY_FOLDER + "%s_%s.npy"%(fname, FILTERS[ci])
+        # load the image if needed
         if load&os.path.exists(filteriname):
             print("Loading from %s"%filteriname)
             IMGI = np.load(filteriname)
         else:
+            ## create a shared memory object for LON/LAT
+            LON_ctypes = np.ctypeslib.as_ctypes(LON)
+            shared_LON = sct.RawArray(LON_ctypes._type_, LON_ctypes)
+            LAT_ctypes = np.ctypeslib.as_ctypes(LAT)
+            shared_LAT = sct.RawArray(LAT_ctypes._type_, LAT_ctypes)
+
             lati = lats[:,ci,:,:].flatten()
             loni = lons[:,ci,:,:].flatten()
             imgi = imgs[:,ci,:,:].flatten()
             emi  = emis[:,ci,:,:].flatten()
             inci = incl[:,ci,:,:].flatten()
 
-            invmask = np.where((lati==-1000.)|(loni==-1000.)|(np.abs(inci)>np.radians(89.)))[0]
+            invmask = np.where((lati==-1000.)|(loni==-1000.)|(np.abs(inci)>np.radians(85.)))[0]
             ## remove pixels that were not projected
             lat = np.delete(lati, invmask)
             lon = np.delete(loni, invmask)
@@ -296,13 +371,6 @@ def map_project(file, newlon=None, newlat=None, pixres=None, num_procs=1, \
                                    newlat, newlon, maski, fname, \
                                    num_procs=num_procs,\
                                    load=load)
-
-    ## apply lighting correction
-    ## mask out all data with high incidence and
-    ## emission angles
-    #maski[np.abs(INCL)>np.radians(89)] = 0
-    #maski[np.abs(EMIS)>np.radians(89)] = 0
-
     maski = np.clip(maski, 0, 1)
     for ci in range(3):
         IMG[:,:,ci] = maski*IMG[:,:,ci]
@@ -310,13 +378,6 @@ def map_project(file, newlon=None, newlat=None, pixres=None, num_procs=1, \
     ## switch from BGR to RGB
     IMG = IMG[:,:,::-1]
     
-    ## do color correction
-    #IMG[:,:,0] *= 0.902
-    #IMG[:,:,2] *= 1.8879
-
-    #IMG = IMG/np.percentile(IMG[IMG>0], 99)
-    #IMG = np.clip(IMG, 0., 1.)#IMG/np.percentile(IMG, 99)
-
     ## Do a simple Lambertian correction if needed
     if 'simple' in scorr_method:
         mu0 = np.clip(np.cos(INCL), 0, 1)
@@ -329,23 +390,53 @@ def map_project(file, newlon=None, newlat=None, pixres=None, num_procs=1, \
     if 'poly' in scorr_method:
         IMG = scorr_poly(INCL, EMIS, newlat, newlon, IMG)
 
+    # with both the poly and simple corrections,
+    # bad incidence values are treated as NaNs. 
+    # remove those pixels here
     IMG[np.isnan(IMG)] = 0.
 
     if 'fft' in scorr_method:
+        # do an FFT correction if needed
         IMG = scorr_fft(IMG, fname, \
                         radius=kwargs.get('fft_radius', 5.), \
                         colorspace=kwargs.get('colorspace', 'hsv'), \
-                        trim_rad=kwargs.get('trim_rad', 0.6))
+                        trim_rad=kwargs.get('trim_rad', 0.6), 
+                        trim_threshold=kwargs.get('trim_thresh', 0.95))
         
-        ## remove the fringes (brightest and dimmest clusters from SLIC)
-        #labels = slic(IMG, compactness=0.5, n_segments=500, \
-                      #start_label=1, convert2lab=True)
-        #IMGsp = color.label2rgb(labels, IMG/IMG.max(), kind='avg', bg_label=0)
-        #Lsp   = color.rgb2lab(IMGsp)[:,:,0]
 
-        #IMG[IMG>topp] = 0.
-    
+    ## expand the image out to the required grid
+    interp_loaded_grid=kwargs.get('interp_loaded_grid', False)
+    if interp_loaded_grid:
+        assert (latg is not None)&(long is not None), "Please provide the grid lat/lon"
+        IMGnew = np.zeros((latg.size, long.size, 3))
+        LATG, LONG = np.meshgrid(latg, long)
+        newpoints = np.stack((LATG.flatten(), LONG.flatten()), axis=1).reshape(-1, 2)
+        print("interpolating from %d x %d => %d x %d"%(nlat, nlon, latg.size, long.size))
+        for ci in range(3):
+            interp_function = RegularGridInterpolator((newlat, newlon), IMG[:,:,ci], bounds_error=False, fill_value=0.)
+            IMGnew[:,:,ci] = interp_function(newpoints).reshape((long.size, latg.size)).T
 
+        # remove interpolation errors where one color has dark data but the
+        # other don't. these needs to be large enough to ignore dark areas,
+        # but small enough that we don't miss color features (such as GRS)
+        IMGnew = IMGnew.reshape((long.size*latg.size, 3))
+        IMGnew[IMGnew.min(axis=-1)<0.1,:] = 0
+        IMG = IMGnew.reshape((latg.size, long.size, 3))
+        
+
+        # interpolate the other variables
+        interp_function = RegularGridInterpolator((newlat, newlon), INCL, bounds_error=False, fill_value=np.nan)
+        INCL = interp_function(newpoints).reshape((long.size, latg.size)).T
+        interp_function = RegularGridInterpolator((newlat, newlon), EMIS, bounds_error=False, fill_value=np.nan)
+        EMIS = interp_function(newpoints).reshape((long.size, latg.size)).T
+        interp_function = RegularGridInterpolator((newlat, newlon), maski, bounds_error=False, fill_value=0.)
+        maski = interp_function(newpoints).reshape((long.size, latg.size)).T
+
+        # update the lat/lon info for output
+        newlat = latg
+        newlon = long
+        nlon   = long.size
+        nlat   = latg.size
 
     IMGc = IMG/IMG.max()
     IMGc = np.clip(IMGc, 0., 1.)#IMG/np.percentile(IMG, 99)
@@ -473,20 +564,9 @@ def project_to_uniform_grid(lon, lat, img, num_procs=1):
         ninpt = len(inpargs)
         while tasks._number_left > 0:
             progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
-            print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
+            if os.environ.get('NO_VERBOSE') is None:
+                print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
             time.sleep(0.05)
-
-        # for ri in pool.imap_unordered(project_part_image, inpargs):
-        #     progress = i/len(inpargs)
-        #     print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
-        #     time.sleep(0.05)
-
-        #     ## construct the image array from the output
-        #     # startxind, endxind, startyind, endyind, IMGi = ri
-        #     # IMG[startyind:endyind,startxind:endxind] = IMGi
-        #     i += 1 
-        # pool.close()
-
     except Exception as e:
         pool.terminate()
         pool.join()
@@ -560,6 +640,8 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
             filename to save the image [Default: None] -- see `save`
         save : bool
             If true, save to output PNG defined as `fname_mosaic_RGB.png`
+        hist_eq : bool
+            Toggle `True` to do histogram equalization to enhance 
 
         Outputs
         -------
@@ -591,8 +673,6 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
             for ci in range(3):
                 val = IMG2[:,:,ci]
                 p0, p1 = np.percentile(val[val>0.], (2,99))
-                #hsv[:,:,2] = exposure.rescale_intensity(hsv[:,:,2], in_range=(p0, p1))
-                #hsv[:,:,2] = exposure.equalize_adapthist(hsv[:,:,2], clip_limit=0.05)
                 IMG2[:,:,ci] = exposure.equalize_adapthist(IMG2[:,:,ci], clip_limit=kwargs.get('clip_limit', 0.05))#color.hsv2rgb(hsv)
 
         IMG2 = IMG2**gamma
@@ -693,8 +773,8 @@ def scorr_poly(INCL, EMIS, newlat, newlon, IMG):
     mask = (~np.isnan(EMIS))&(~np.isnan(INCL))&(IMG.min(axis=2)>0.)
 
     ## get the brightness value of the pixels
-    LAB = color.rgb2hsv(IMG/IMG.max())
-    IMG_val = LAB[:,:,2]/100.
+    HSV = color.rgb2hsv(IMG/IMG.max())
+    IMG_val = HSV[:,:,2]
     print(IMG_val.min(), IMG_val.max())
     #IMG_val = IMG[:,:,1]
 
@@ -715,7 +795,7 @@ def scorr_poly(INCL, EMIS, newlat, newlon, IMG):
 
     INCLf = INCLf[ind]; EMISf = EMISf[ind]; VALf = VALf[ind]
 
-    ## fit the 2nd order polynomial
+    # create the two axis (x is mu, y is mu0)
     x  = INCLf; y = EMISf
     xx = np.cos(INCL); yy = np.cos(EMIS)
 
@@ -725,8 +805,11 @@ def scorr_poly(INCL, EMIS, newlat, newlon, IMG):
         for j in range(i):
             A.append( (x**i)*(y**j) )
     A = np.asarray(A).T
+
+    # fit the polynomial
     coeff, r, rank, s = np.linalg.lstsq(A, VALf, rcond=None)
 
+    # create the correction from the new polynomial
     SCORR = np.zeros_like(INCL)
     k = 0
     for i in range(m):
@@ -734,60 +817,48 @@ def scorr_poly(INCL, EMIS, newlat, newlon, IMG):
             SCORR += coeff[k]*(xx**i)*(yy**j)
             k += 1
 
-
-    '''
-    A = np.array([INCLf*0 + 1, INCLf, EMISf, INCLf**2., INCLf**2.*EMISf,\
-                  INCLf**2.*EMISf**2., EMISf**2.*INCLf, EMISf**2., INCLf*EMISf, \
-                  INCLf**3., INCLf**3.*EMISf, INCLf**3.*EMISf**2., INCLf**3.*EMISf**3,\
-                  INCLf**2.*EMISf**3., INCLf*EMISf**3., EMISf**3.
-                  ]).T
-    coeff, r, rank, s = np.linalg.lstsq(A, VALf)
-
-    ## create the correction image
-    SCORR = coeff[0] + np.cos(INCL)*coeff[1] + np.cos(EMIS)*coeff[2] + np.cos(INCL)**2.*coeff[3] + \
-        np.cos(INCL)**2.*np.cos(EMIS)*coeff[4] + np.cos(INCL)**2.*np.cos(EMIS)**2.*coeff[5] + \
-        np.cos(EMIS)**2.*np.cos(INCL)*coeff[6] + np.cos(EMIS)**2.*coeff[7] + np.cos(EMIS)*np.cos(INCL)*coeff[8] + \
-        np.cos(INCL)**3.*coeff[9] + np.cos(INCL)**3.*np.cos(EMIS)*coeff[10] + \
-        np.cos(INCL)**3.*np.cos(EMIS)**2.*coeff[11] + np.cos(INCL)**3.*np.cos(EMIS)**3.*coeff[12] +\
-        np.cos(INCL)**2.*np.cos(EMIS)**3.*coeff[13] + np.cos(INCL)*np.cos(EMIS)**3.*coeff[14] + \
-        np.cos(EMIS)**3.*coeff[15]
-    
-    ## fit the 2nd order polynomial
-    A = np.array([INCLf*0 + 1, INCLf, EMISf, INCLf**2., INCLf**2.*EMISf,\
-                  INCLf**2.*EMISf**2., EMISf**2.*INCLf, EMISf**2., INCLf*EMISf]).T
-    coeff, r, rank, s = np.linalg.lstsq(A, VALf)
-
-    ## create the correction image
-    SCORR = coeff[0] + np.cos(INCL)*coeff[1] + np.cos(EMIS)*coeff[2] + np.cos(INCL)**2.*coeff[3] + \
-        np.cos(INCL)**2.*np.cos(EMIS)*coeff[4] + np.cos(INCL)**2.*np.cos(EMIS)**2.*coeff[5] + \
-        np.cos(EMIS)**2.*np.cos(INCL)*coeff[6] + np.cos(EMIS)**2.*coeff[7] + np.cos(EMIS)*np.cos(INCL)*coeff[8]
-    
-    A = np.array([INCLf*0 + 1, INCLf, EMISf, INCLf*EMISf]).T
-    coeff, r, rank, s = np.linalg.lstsq(A, VALf)
-
-    ## create the correction image
-    SCORR = coeff[0] + np.cos(INCL)*coeff[1] + np.cos(EMIS)*coeff[2] + \
-        np.cos(EMIS)*np.cos(INCL)*coeff[3]
-    '''
-
+    # ignore negative values
     SCORR[SCORR<0.] = np.nan
-    #SCORR[SCORR<0.05] = 0.05
 
-    ## correct the image and get the RGB values back
-    LAB[:,:,0] = LAB[:,:,0]/SCORR
-    LAB[:,:,0] = LAB[:,:,0]/np.percentile(LAB[:,:,0][LAB[:,:,0]>0.], 99)
-    LAB[:,:,0] = np.clip(LAB[:,:,0], 0, 1)*100.
+    ## correct the image and normalize
+    HSV[:,:,2] = HSV[:,:,2]/SCORR
+    HSV[:,:,2] = HSV[:,:,2]/np.percentile(HSV[:,:,2][HSV[:,:,2]>0.], 99)
+    HSV[:,:,2] = np.clip(HSV[:,:,2], 0, 1)
 
-    print(LAB[:,:,0].min(), LAB[:,:,0].max())
+    print(HSV[:,:,2].min(), HSV[:,:,2].max())
 
-    IMG_corr   = color.lab2rgb(LAB)
-
-    
+    # convert back to RGB
+    IMG_corr   = color.hsv2rgb(HSV)
 
     return IMG_corr
 
 
-def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7):
+def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7, trim_threshold=0.95):
+    '''
+        Do a correction using a FFT based high pass filter. This works by
+        creating a mask of low-frequency (large scale) light variation which is used to divide
+        the original image to remove light gradients in the image.
+
+        Inputs
+        ------
+        IMG : numpy.ndarray
+            the input image to be processed
+        fname : string
+            the name of the file (used for outputing the mask and FFT image)
+        radius : float
+            the radius of the Guassian filter that will be convolved 
+            with the image to extract the low frqeuency features
+        trim_rad : float
+            the radius to use to clip the image (to remove noise at the edges). 
+            The radius is given by `trim_rad*radius`, so `trim_rad` is the fraction/multiple
+            of the original radius to use to trim the edges
+        trim_threshold : float
+            The threshold value for the trimming mask 
+            to remove edge noise. Values for the mask within the image will be 1
+            while outside the image will be 0. Near the edges, the values will be 
+            in between. Choose a value close to 1 to clip close to the image, values 
+            close to zero will extend the edge.
+    '''
     from scipy.ndimage import center_of_mass
 
 
@@ -812,26 +883,20 @@ def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7):
 
     value = data[:,:,axis]
 
+    # Center the image (better for the FFT)
     com    = center_of_mass(value)
     dshift = (int(IMG.shape[0]//2-com[0]), int(IMG.shape[1]//2-com[1]))
 
     data  = np.roll(data, dshift, axis=(0,1))
     value = data[:,:,axis]
 
+    # Do the FFT and get the filter
     ifft2 = get_fft(value, radius=radius)
     plt.imsave(fname+"ifft.png", ifft2)
 
-    #IMGr[:,:,ci] = IMGr[:,:,ci]/ifft2
+    # Divide the image by the filter to remove high frequency noise
     if colorspace != 'rgb':
         valnew = value/ifft2
-        '''
-        if colorspace in ['hsv', 'yuv']:
-            scale = np.max(valnew)#np.median(valnew[valnew>0.])/0.4
-            valnew = np.clip(valnew/scale, 0, 1)
-        elif colorspace=='lab':
-            scale = np.mean(valnew[valnew>0.])/40.
-            valnew = np.clip(valnew/scale, 0, 100)
-        '''
         data[:,:,axis] = valnew
     else:
         for ci in range(3):
@@ -839,28 +904,49 @@ def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7):
 
         data = data/data.max()
 
-    IMG = invfunc(np.roll(data, (-dshift[0], -dshift[1]), axis=(0,1)))*scale
+    # Create a mask to trim the edges
+    picmask = np.zeros_like(data[:,:,0])
 
-    picmask = np.zeros_like(IMG[:,:,0])
-    picmask[IMG.mean(axis=2)>0.] = 1.
+    # Find the pixels which contain image data
+    picmask[invfunc(data).min(axis=-1)>0.3] = 1.
+
+    # Filter the mask to blur the edges
     Lfilt  = get_fft(picmask, radius=trim_rad*radius).flatten()
-    mask = Lfilt<0.95
-    maskimg = np.zeros((IMG.shape[0]*IMG.shape[1]))
+
+    # Trim the edge values based on the given threshold
+    mask = Lfilt<trim_threshold
+
+    # Save the mask as an image
+    maskimg = np.zeros((data.shape[0]*data.shape[1]))
     maskimg[mask] = 1
     plt.imsave(RGB_FOLDER+"%s_Lmask.png"%fname, maskimg.reshape((IMG.shape[0], IMG.shape[1])))
-    IMGf  = IMG.reshape((IMG.shape[0]*IMG.shape[1], 3))
+
+    # Trim the input image with this mask
+    IMGf  = data.reshape((data.shape[0]*data.shape[1], 3))
     IMGf[mask,:] = 0.
-    IMG   = IMGf.reshape(IMG.shape)
-
-    #hsv[:,:,2] = L/L.max()
-    #for ci in range(3):
-    #    imgi = np.roll(IMG[:,:,ci], dshift, axis=(0,1))
-    #    IMG[:,:,ci] = np.roll(imgi/ifft2, (-dshift[0], -dshift[1]), axis=(0,1))
-
-    #return IMG#np.roll(IMG, (-dshift[0], -dshift[1]), axis=(0,1))
+    datanew  = IMGf.reshape(IMG.shape)
+    
+    # Obtain the new image and transform it back to the original axis
+    IMG = invfunc(np.roll(datanew, (-dshift[0], -dshift[1]), axis=(0,1)))*scale
     return IMG
 
 def get_fft(value, radius):
+    '''
+        Performs a FFT to convolve a Gaussian filter
+        with the input image. 
+
+        Inputs
+        ------
+        value : numpy.ndarray
+            The input 2D image to process
+        radius : float
+            The radius of the Gaussian filter (in pixels)
+
+        Outputs
+        -------
+        ifft2 : numpy.ndarray
+            The filter corresponding to the convolution
+    '''
     from scipy import fftpack
     ## create the low pass filter
     xx = np.asarray(range(value.shape[1]))

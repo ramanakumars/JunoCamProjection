@@ -314,6 +314,9 @@ class Projector():
         scloc     = np.zeros((self.nframes, 3))
         et        = np.zeros(self.nframes)
 
+        ## save these parameters to a NetCDF file so that we can plot it later 
+        if not os.path.exists(NC_FOLDER):
+            os.mkdir(NC_FOLDER)
 
         ## flatfield and gain from Brian Swift's GitHub (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)
         flatfield = np.array(io.imread(os.path.dirname(__file__)+'/cal/flatFieldsSmooth12to16.tiff'))
@@ -378,9 +381,6 @@ class Projector():
         
         pixres = pixres[pixres > 0.]
 
-        ## save these parameters to a NetCDF file so that we can plot it later 
-        if not os.path.exists(NC_FOLDER):
-            os.mkdir(NC_FOLDER)
         f = nc.Dataset('%s%s.nc'%(NC_FOLDER, self.fname), 'w')
 
         framedim = f.createDimension('nframes', self.nframes)
@@ -390,15 +390,15 @@ class Projector():
         xyzdim   = f.createDimension('xyz', 3)
 
         ## create the NetCDF variables 
-        latVar     = f.createVariable('lat', 'float32', ('nframes', 'ncolors', 'y','x'))
-        lonVar     = f.createVariable('lon', 'float32', ('nframes', 'ncolors', 'y','x'))
-        imgVar     = f.createVariable('img', 'float32', ('nframes', 'ncolors', 'y','x'))
-        incVar     = f.createVariable('inclination', 'float32', ('nframes', 'ncolors', 'y','x'))
-        emiVar     = f.createVariable('emission', 'float32', ('nframes', 'ncolors', 'y','x'))
-        rawimgVar  = f.createVariable('rawimg', 'uint8', ('nframes', 'ncolors', 'y','x'))
-        fluximgVar = f.createVariable('flux', 'float64', ('nframes', 'ncolors', 'y','x'))
-        scVar      = f.createVariable('scloc', 'float64', ('nframes','xyz'))
-        etVar      = f.createVariable('et', 'float64', ('nframes'))
+        latVar     = f.createVariable('lat', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
+        lonVar     = f.createVariable('lon', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
+        imgVar     = f.createVariable('img', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
+        incVar     = f.createVariable('inclination', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
+        emiVar     = f.createVariable('emission', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
+        rawimgVar  = f.createVariable('rawimg', 'uint8', ('nframes', 'ncolors', 'y','x'), zlib=True)
+        fluximgVar = f.createVariable('flux', 'float64', ('nframes', 'ncolors', 'y','x'), zlib=True)
+        scVar      = f.createVariable('scloc', 'float64', ('nframes','xyz'), zlib=True)
+        etVar      = f.createVariable('et', 'float64', ('nframes'), zlib=True)
 
         latVar[:]     = lat[:]
         lonVar[:]     = lon[:]
