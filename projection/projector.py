@@ -1,6 +1,11 @@
 import json, glob, re
 import time
+from skimage import feature
+from sklearn.metrics import pairwise_distances
 from .mosaic_funcs import *
+
+# speed of light
+c_light = 3.e5
 
 ## for decompanding -- taken from Kevin Gill's github page 
 SQROOT = np.array((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
@@ -76,7 +81,7 @@ class Projector():
         self.sclat = float(self.metadata['SUB_SPACECRAFT_LATITUDE'])
         self.sclon = float(self.metadata['SUB_SPACECRAFT_LONGITUDE'])
 
-        self.frame_delay = float(intframe_delay[0])
+        self.frame_delay = float(intframe_delay[0]) 
 
         ## number of strips 
         self.nframelets  = int(self.metadata['LINES']/FRAME_HEIGHT)
@@ -93,8 +98,8 @@ class Projector():
 
         self.savefolder = "%s_proj/"%self.fname
 
+        self.jitter = 0.
 
-    
     def load_kernels(self, KERNEL_DATAFOLDER):
         '''
             Determines and loads the required SPICE data kernels
@@ -146,6 +151,7 @@ class Projector():
         
         ''' use the predicted kernels if there are no rec '''
         if(nck == 0):
+            print("Using predicted CK")
             ckpattern = r'juno_sc_pre_([0-9]{6})_([0-9]{6})\S*'
             for ck in cks:
                 fname = os.path.basename(ck)
@@ -173,6 +179,7 @@ class Projector():
 
         ''' use the predicted kernels if there are no rec '''
         if(nspk == 0):
+            print("Using predicted SPK")
             spkpattern = r'spk_pre_([0-9]{6})_([0-9]{6})\S*'
             for spk in spks1:
                 fname = os.path.basename(spk)
@@ -237,14 +244,13 @@ class Projector():
             start = 3*FRAME_HEIGHT*n+ci*FRAME_HEIGHT
             end   = 3*FRAME_HEIGHT*n+(ci+1)*FRAME_HEIGHT
             frame = self.fullimg[start:end,:]
-            eti   = self.start_et + cami.time_bias + \
+            eti   = self.start_et + cami.time_bias + self.jitter + \
                 (self.frame_delay+cami.iframe_delay)*n
             '''
                 calculate the spacecraft position in the 
                 Jupiter reference frame
             '''
-            state, _ = spice.spkezr('JUNO', eti, 'IAU_JUPITER', 'CN', 'JUPITER')
-            scloc    = state[:3]
+            scloc, _ = spice.spkpos('JUNO', eti, 'IAU_JUPITER', 'CN+S', 'JUPITER')
 
             '''
                 calculate the transformation from instrument 
@@ -286,7 +292,117 @@ class Projector():
             raise(e)
             return
 
-    
+    def find_jitter(self, jitter_max=25):
+
+        threshold = 0.1*self.fullimg.max()
+
+        for nci in range(self.nframes*3):
+            # find whether the planet limb is in now
+            # approximating this as the first time the planet is seen
+            # in the image, which is generally true..
+
+            n  = nci//3
+            ci = nci%3
+
+            start = 3*FRAME_HEIGHT*n+ci*FRAME_HEIGHT
+            end   = 3*FRAME_HEIGHT*n+(ci+1)*FRAME_HEIGHT
+            frame = self.fullimg[start:end,:]
+            if len(frame[frame>threshold]) > 5000:
+                break
+
+
+        # create the mask of the visible jupiter in the image
+        imgmask  = np.zeros_like(frame)
+        imgmask[frame > threshold] = 1
+
+        # find the edges
+        sigma = 8
+        npoints = 0
+        while npoints < 10:
+            limb_img = np.asarray(feature.canny(frame[:,24:1630], sigma=sigma), dtype=float)
+            limb_img_points = np.dstack(np.where(limb_img==1)[::-1])[0]
+            limb_img_points[:,0] += 24
+            npoints = len(limb_img_points)
+            sigma -= 1
+
+        
+        '''
+        plt.figure(dpi=200)
+        plt.imshow(frame, cmap='gray')
+        plt.plot(limb_img_points[:,0], limb_img_points[:,1], 'r-')
+        '''
+
+        # we've found our limb. now we need to find
+        # the actual limb from SPICE
+        cami  = CameraModel(ci)
+
+        jitter_list = np.arange(-jitter_max, jitter_max, 1)/1.e3
+
+        min_dists = np.zeros_like(jitter_list)
+
+        for j, jitter in enumerate(jitter_list):
+            eti   = self.start_et + cami.time_bias + jitter + \
+                (self.frame_delay+cami.iframe_delay)*n
+
+            limbs_jcam = self.get_limb(eti, cami)
+
+            distances = pairwise_distances(limbs_jcam, limb_img_points)
+
+            '''
+            plt.figure(dpi=200)
+            plt.imshow(frame, cmap='gray')
+            plt.plot(limbs_jcam[:,0], limbs_jcam[:,1], 'r.', markersize=0.1)
+            plt.plot(limb_img_points[:,0], limb_img_points[:,1], 'g.', markersize=0.1)
+            plt.show()
+            '''
+            if len(distances[distances<15]>5):
+                min_dists[j] = distances[distances<15.].mean()
+            else:
+                min_dists[j] = 1.e10
+
+            #print(distances.min(), distances.max(), min_dists[j])
+            #plt.contour(limb_img, vmin=0.5, vmax=1.5, colors='g', linewidths=0.1)
+
+
+        self.jitter = jitter_list[min_dists.argmin()]
+
+        print("Found best jitter value of %.1f ms"%(self.jitter*1.e3))
+        
+        eti   = self.start_et + cami.time_bias + self.jitter + \
+            (self.frame_delay+cami.iframe_delay)*n
+
+        limbs_jcam = self.get_limb(eti, cami)
+        #plt.plot(limbs_jcam[:,0], limbs_jcam[:,1], 'g.', markersize=0.1)
+        #plt.show()
+
+    def get_limb(self, eti, cami):
+        METHOD = 'TANGENT/ELLIPSOID'
+        CORLOC = 'ELLIPSOID LIMB'
+
+        scloc, lt = spice.spkpos('JUNO', eti, 'IAU_JUPITER', 'CN+S', 'JUPITER')
+
+        # use the sub spacecraft point as the reference vector
+        refvec, _, _ = spice.subpnt('INTERCEPT/ELLIPSOID', 'JUPITER', eti, 'IAU_JUPITER',
+                                    'CN+S', 'JUNO')
+
+        #print(np.degrees(spice.recpgr('JUPITER', scloc, self.re, self.flattening)[:2]), self.sclat, self.sclon)
+
+        _, _ , eplimbs, limbs_IAU = spice.limbpt(METHOD, 'JUPITER', eti, 'IAU_JUPITER', 
+                                      'CN+S', CORLOC, 'JUNO', refvec, np.radians(0.1), 
+                                      3600, 4., 0.001, 7200)
+
+        limbs_jcam = np.zeros((limbs_IAU.shape[0], 2))
+        for i, limbi in enumerate(limbs_IAU):
+            transform = spice.pxfrm2('IAU_JUPITER', 'JUNO_JUNOCAM', eplimbs[i], eti)
+            veci = np.matmul(transform, limbs_IAU[i,:])
+            limbs_jcam[i,:] = cami.vec2pix(veci)
+
+        mask = (limbs_jcam[:,1]<128)&(limbs_jcam[:,1]>0)&(limbs_jcam[:,0]>0)&(limbs_jcam[:,0]<1648)
+        limbs_jcam = limbs_jcam[mask,:]
+
+        return limbs_jcam
+
+
     def process(self, num_procs=1):
         '''
             Main driver for the projection. Determines line of sight
@@ -296,6 +412,10 @@ class Projector():
             ----------
             num_procs : int
                 Number of CPUs to use for multiprocessing [Default: 1]
+            jitter : float
+                offset in ms, to add to the start time to compensate for
+                jitter [Default: 0]
+                
         '''
         print("%s"%self.fname)
         r = []
@@ -317,6 +437,9 @@ class Projector():
         ## save these parameters to a NetCDF file so that we can plot it later 
         if not os.path.exists(NC_FOLDER):
             os.mkdir(NC_FOLDER)
+
+
+        self.find_jitter(jitter_max=40)
 
         ## flatfield and gain from Brian Swift's GitHub (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)
         flatfield = np.array(io.imread(os.path.dirname(__file__)+'/cal/flatFieldsSmooth12to16.tiff'))
@@ -341,7 +464,7 @@ class Projector():
                 inpargs.append((i,j))
 
         pixres = np.zeros(len(inpargs))
-        
+
         pool = multiprocessing.Pool(processes=num_procs, initializer=initializer)
         try:
             r = pool.map_async(self.process_n_c, inpargs)
@@ -388,6 +511,8 @@ class Projector():
         xdim     = f.createDimension('x',FRAME_WIDTH)
         ydim     = f.createDimension('y',FRAME_HEIGHT)
         xyzdim   = f.createDimension('xyz', 3)
+
+        f.jitter = self.jitter*1.e3
 
         ## create the NetCDF variables 
         latVar     = f.createVariable('lat', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)

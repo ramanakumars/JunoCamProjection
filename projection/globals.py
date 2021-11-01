@@ -25,3 +25,4 @@ NC_FOLDER  = './nc/'
 MOS_FOLDER = './mos/'
 RGB_FOLDER = './rgb/'
 NPY_FOLDER = './npy/'
+

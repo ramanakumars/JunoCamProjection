@@ -129,7 +129,7 @@ int* get_image_mask(double *lat, double *lon, int nlat, int nlon,
 
 	for(int i=0; i<nframes; i++) {
 		// calculate the spacecraft position
-		spkezr_c("JUNO", et[i], "IAU_JUPITER", "CN", "JUPITER", state, &lt);
+		spkezr_c("JUNO", et[i], "IAU_JUPITER", "CN+S", "JUPITER", state, &lt);
 
 		// copy over the position data
 		scloc[i*3+0] = state[0];

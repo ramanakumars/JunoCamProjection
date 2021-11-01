@@ -62,6 +62,12 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
             lati = dataset.variables['lat'][:]
             loni = dataset.variables['lon'][:]
             inci = dataset.variables['inclination'][:]
+            
+            lon_rot = kwargs.get('lon_rot', 0.)
+            loni[loni!=-1000] += lon_rot
+            loni[(loni < -180.)&(loni!=-1000)] += 360.
+            loni[loni > 180.]  -= 360.
+
             lats.append(lati)
             lons.append(loni)
             incs.append(inci)
@@ -93,20 +99,22 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     nlon = newlon.size 
     
     # create the arrays to hold the intermediary data
-    IMG   = np.zeros((nlat, nlon, 3))
+    IMG   = np.zeros((nlat, nlon, 3), dtype='float')
     IMGs  = np.zeros((len(files), nlat, nlon, 3), dtype=np.float32)
-    Ls    = np.zeros((len(files), nlat, nlon))
-    INCLs = np.zeros((len(files), nlat, nlon))
-    EMISs = np.zeros((len(files), nlat, nlon))
+    Ls    = np.zeros((len(files), nlat, nlon), dtype='float')
+    INCLs = np.zeros((len(files), nlat, nlon), dtype='float')
+    EMISs = np.zeros((len(files), nlat, nlon), dtype='float')
 
     print("Mosaic shape: %d x %d"%(nlon, nlat))
 
     for i, file in enumerate(files):
         # generate the projection of each image in the mosaic
         fname = files[i][:-3]
-        _, IMGi, _, INCLs[i,:], EMISs[i,:] = map_project(file, pixres=pixres, long=newlon, latg=newlat,\
-                        save=True, savemask=True, num_procs=num_procs, \
+        _, IMGi, _, INCLs[i,:], EMISs[i,:] = map_project(file, pixres=pixres, long=newlon, latg=newlat,
+                        save=True, savemask=True, num_procs=num_procs,
                         scorr_method=scorr_method, load=load, ret_inc=True, **kwargs)
+
+        IMGi[np.isnan(IMGi)] = 0.
         # save the data and also get brightness information
         IMGs[i,:] = IMGi
         Ls[i,:]   = color.rgb2hsv(IMGi)[:,:,2]
@@ -123,7 +131,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     # get the overlap area, and correct for 
     # brightness variations between overlap
     # regions in different images
-    npix    = np.sum(Ls>0.2, axis=0)
+    npix    = np.sum(Ls>0.05*Ls.max(), axis=0)
     overlap_mask = npix>1
 
     # get the average value of the overlap
@@ -141,6 +149,11 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     # regions have the same brightness
     for i in range(len(files)):
         IMGs[i,:] *= ave_all/ave_val[i]
+    
+    # clear the memory 
+    del overlap_mask
+    del ave_val
+    del npix
 
 
     if combine_method=='max':
@@ -162,7 +175,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         
         # loop through every pixel and find the best value to assign to the mosaic
         for jj in range(IMG.shape[0]):
-            print("\r[%-20s] %d/%d"%(int(jj/IMG.shape[0]*20.)*'=', jj, IMG.shape[0]), end='')
+            print("\r[%-20s] %d/%d"%(int(jj/IMG.shape[0]*20.)*'=', jj+1, IMG.shape[0]), end='')
             for ii in range(IMG.shape[1]):
                 incemij = incem[:,jj,ii]
                 # the best pixel is one that actually saw that feature, is not too dim, 
@@ -179,6 +192,10 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
                 elif nimgs > 0:
                     IMG[jj,ii,:] = IMGs[mask,jj,ii,:]
 
+    # clean up 
+    del INCLs
+    del EMISs
+
     # save these parameters to a NetCDF file so that we can plot it later 
     with nc.Dataset(NC_FOLDER+'multi_proj_raw.nc', 'w') as f:
         xdim     = f.createDimension('x',nlon)
@@ -190,14 +207,14 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         latVar   = f.createVariable('lat', 'float64', ('y'), zlib=True)
         lonVar   = f.createVariable('lon', 'float64', ('x'), zlib=True)
         imgVar   = f.createVariable('img', 'float64', ('y','x','colors'), zlib=True)
-        imgsVar  = f.createVariable('imgs', 'float64', ('file', 'y','x','colors'), zlib=True)
+        imgsVar  = f.createVariable('imgs', 'float32', ('file', 'y','x','colors'), zlib=True)
         if incem is not None:
             incemVar = f.createVariable('incem', 'float64', ('file', 'y','x'), zlib=True)
 
         latVar[:]  = newlat[:]
         lonVar[:]  = newlon[:]
         imgVar[:]  = IMG[:]
-        imgsVar[:] = IMGs
+        imgsVar[:] = IMGs[:]
         if incem is not None:
             incemVar[:] = incem[:]
     
@@ -283,6 +300,12 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
     incl   = dataset.variables['inclination'][:]
     emis   = dataset.variables['emission'][:]
 
+    # rotate the lon grid if needed
+    lon_rot = kwargs.get('lon_rot', 0.)
+    lons[lons!=-1000] += lon_rot
+    lons[(lons < -180.)&(lons!=-1000)] += 360.
+    lons[lons > 180.]  -= 360.
+
     nframes = eti.shape[0]
 
     if (pixres is not None):
@@ -303,7 +326,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         print("Limits: lon: %.3f %.3f  lat: %.3f %.3f  size: %d x %d"%(\
                 newlon.min(), newlon.max(), newlat.min(), newlat.max(), newlon.size, newlat.size))
     else:
-        raise RuntimeError("Please provide a resolution resolution")
+        raise RuntimeError("Please provide a resolution")
 
     ## define the arrays to hold the new gridded data
     nlat = newlat.size
@@ -317,7 +340,10 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         print("Loading mask file")
         maski = np.load(NPY_FOLDER+"%s_mask.npy"%fname)
     else:
-        output = image_mask_c(np.radians(newlat), np.radians(newlon), nlat, nlon, \
+        roll_lon = newlon - lon_rot
+        roll_lon[roll_lon < -180.] += 360.
+        roll_lon[roll_lon >  180.] -= 360.
+        output = image_mask_c(np.radians(newlat), np.radians(roll_lon), nlat, nlon, \
                            eti, nframes)
         maski = ctypes.cast(output, ctypes.POINTER(ctypes.c_int*(nlat*nlon))).contents
         maski = np.asarray(maski, dtype=np.int).reshape((nlat, nlon))
