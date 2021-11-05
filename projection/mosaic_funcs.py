@@ -388,8 +388,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
             IMGI[IMGI<0.] = 0.
 
             ## Save the data out to a numpy file
-            if(save):
-                np.save(filteriname, IMGI)
+            np.save(filteriname, IMGI)
         maski[IMGI<0.001] = 0
         IMG[:,:,ci]  = IMGI
 
@@ -694,7 +693,7 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
 
         if hist_eq:
             ## normalize the image by the 95% percentile
-            IMG2 = IMG2/(np.percentile(IMG2[IMG2>0.], 99.))
+            IMG2 = IMG2/(np.percentile(IMG2[IMG2>0.], 99.9))
             IMG2 = np.clip(IMG2, 0, 1)
             for ci in range(3):
                 val = IMG2[:,:,ci]
@@ -702,8 +701,8 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
                 IMG2[:,:,ci] = exposure.equalize_adapthist(IMG2[:,:,ci], clip_limit=kwargs.get('clip_limit', 0.05))#color.hsv2rgb(hsv)
 
         IMG2 = IMG2**gamma
-        ## normalize the image by the 95% percentile
-        IMG2 = IMG2/(np.percentile(IMG2[IMG2>0.], 99.))
+        ## normalize the image by the 99.9% percentile
+        IMG2 = IMG2/(np.percentile(IMG2[IMG2>0.], 99.9))
         IMG2 = np.clip(IMG2, 0, 1)
 
         ## save the new image out to the netCDF file

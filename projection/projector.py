@@ -78,6 +78,10 @@ class Projector():
         
         self.fullimg  = plt.imread(imagefolder+"%s-raw.png"%self.fname)
 
+        # ignore color channels in the image
+        if len(self.fullimg.shape)==3:
+            self.fullimg = self.fullimg.mean(axis=-1)
+
         self.sclat = float(self.metadata['SUB_SPACECRAFT_LATITUDE'])
         self.sclon = float(self.metadata['SUB_SPACECRAFT_LONGITUDE'])
 
@@ -292,7 +296,7 @@ class Projector():
             raise(e)
             return
 
-    def find_jitter(self, jitter_max=25):
+    def find_jitter(self, jitter_max=25, plot=False):
 
         threshold = 0.1*self.fullimg.max()
 
@@ -303,17 +307,36 @@ class Projector():
 
             n  = nci//3
             ci = nci%3
+            
 
             start = 3*FRAME_HEIGHT*n+ci*FRAME_HEIGHT
             end   = 3*FRAME_HEIGHT*n+(ci+1)*FRAME_HEIGHT
             frame = self.fullimg[start:end,:]
             if len(frame[frame>threshold]) > 5000:
-                break
+                # make sure that the limb is also in the image
+                # we want to find a frame where both the predicted limb
+                # with no jitter and the actual limb are visible so that 
+                # the offset we determine is small
+                cami  = CameraModel(ci)
+                eti   = self.start_et + cami.time_bias + \
+                    (self.frame_delay+cami.iframe_delay)*n
+                limb_pts = self.get_limb(eti, cami)
 
+                # bad test image if the limb is not fully visible 
+                # in the frame
+                if len(limb_pts) > 5:
+                    break
 
         # create the mask of the visible jupiter in the image
         imgmask  = np.zeros_like(frame)
         imgmask[frame > threshold] = 1
+        
+        if plot:
+            plt.figure(dpi=200)
+            plt.imshow(frame, cmap='gray')
+            plt.plot(limb_pts[:,0], limb_pts[:,1], 'r-')
+            plt.draw()
+            plt.pause(0.001)
 
         # find the edges
         sigma = 8
@@ -325,12 +348,11 @@ class Projector():
             npoints = len(limb_img_points)
             sigma -= 1
 
-        
-        '''
-        plt.figure(dpi=200)
-        plt.imshow(frame, cmap='gray')
-        plt.plot(limb_img_points[:,0], limb_img_points[:,1], 'r-')
-        '''
+        distances = pairwise_distances(limb_pts, limb_img_points)
+
+        if plot:
+            plt.plot(limb_img_points[:,0], limb_img_points[:,1], 'g-')
+
 
         # we've found our limb. now we need to find
         # the actual limb from SPICE
@@ -348,13 +370,13 @@ class Projector():
 
             distances = pairwise_distances(limbs_jcam, limb_img_points)
 
-            '''
-            plt.figure(dpi=200)
-            plt.imshow(frame, cmap='gray')
-            plt.plot(limbs_jcam[:,0], limbs_jcam[:,1], 'r.', markersize=0.1)
-            plt.plot(limb_img_points[:,0], limb_img_points[:,1], 'g.', markersize=0.1)
-            plt.show()
-            '''
+            if plot:
+                plt.figure(dpi=200)
+                plt.imshow(frame, cmap='gray')
+                plt.plot(limbs_jcam[:,0], limbs_jcam[:,1], 'r.', markersize=0.1)
+                plt.plot(limb_img_points[:,0], limb_img_points[:,1], 'g.', markersize=0.1)
+                plt.show()
+
             if len(distances[distances<15]>5):
                 min_dists[j] = distances[distances<15.].mean()
             else:
@@ -372,8 +394,10 @@ class Projector():
             (self.frame_delay+cami.iframe_delay)*n
 
         limbs_jcam = self.get_limb(eti, cami)
-        #plt.plot(limbs_jcam[:,0], limbs_jcam[:,1], 'g.', markersize=0.1)
-        #plt.show()
+
+        if plot:
+            plt.plot(limbs_jcam[:,0], limbs_jcam[:,1], 'g.', markersize=0.1)
+            plt.show()
 
     def get_limb(self, eti, cami):
         METHOD = 'TANGENT/ELLIPSOID'
