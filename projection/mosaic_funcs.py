@@ -131,7 +131,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     # get the overlap area, and correct for 
     # brightness variations between overlap
     # regions in different images
-    npix    = np.sum(Ls>0.05*Ls.max(), axis=0)
+    npix    = np.sum(Ls>0.005*Ls.max(), axis=0)
     overlap_mask = npix>1
 
     # get the average value of the overlap
