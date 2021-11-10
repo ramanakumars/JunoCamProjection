@@ -61,7 +61,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         with nc.Dataset(NC_FOLDER+file, 'r') as dataset:
             lati = dataset.variables['lat'][:]
             loni = dataset.variables['lon'][:]
-            inci = dataset.variables['inclination'][:]
+            inci = dataset.variables['incidence'][:]
             
             lon_rot = kwargs.get('lon_rot', 0.)
             loni[loni!=-1000] += lon_rot
@@ -280,8 +280,8 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
 
     if not os.path.exists(MOS_FOLDER):
         os.mkdir(MOS_FOLDER)
-    if not os.path.exists(RGB_FOLDER):
-        os.mkdir(RGB_FOLDER)
+    if not os.path.exists(MASK_FOLDER):
+        os.mkdir(MASK_FOLDER)
     if not os.path.exists(NPY_FOLDER):
         os.mkdir(NPY_FOLDER)
 
@@ -297,7 +297,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         imgs   = dataset.variables['img'][:].astype(float)
     scloci = dataset.variables['scloc'][:]
     eti    = dataset.variables['et'][:]
-    incl   = dataset.variables['inclination'][:]
+    incid   = dataset.variables['incidence'][:]
     emis   = dataset.variables['emission'][:]
 
     # rotate the lon grid if needed
@@ -309,17 +309,11 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
     nframes = eti.shape[0]
 
     if (pixres is not None):
-        masks   = (lats!=-1000)&(lons!=-1000)&(np.abs(incl)<np.radians(89.))
+        masks   = (lats!=-1000)&(lons!=-1000)&(np.abs(incid)<np.radians(89.))
         latmin = lats[masks].min()
         latmax = lats[masks].max()
         lonmin = lons[masks].min()
         lonmax = lons[masks].max()
-
-        # expand the domain slightly -- makes the FFT work better
-        #latmin = max([-90, latmin-5])
-        #latmax = min([90, latmax+5])
-        #lonmin = max([-180, lonmin-5])
-        #lonmax = min([180, lonmax+5])
 
         newlon = np.arange(lonmin, lonmax, pixres)
         newlat = np.arange(latmin, latmax, pixres)
@@ -351,7 +345,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
     
     ## save the mask and the raw pixel values if needed
     if(savemask):
-        plt.imsave(RGB_FOLDER+'mask_%s.png'%(fname), maski, vmin=0., vmax=1., cmap='gray', origin='lower')
+        plt.imsave(MASK_FOLDER+'mask_%s.png'%(fname), maski, vmin=0., vmax=1., cmap='gray', origin='lower')
 
     # loop through each color and create that color band in the projection
     for ci in range(3):
@@ -372,7 +366,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
             loni = lons[:,ci,:,:].flatten()
             imgi = imgs[:,ci,:,:].flatten()
             emi  = emis[:,ci,:,:].flatten()
-            inci = incl[:,ci,:,:].flatten()
+            inci = incid[:,ci,:,:].flatten()
 
             invmask = np.where((lati==-1000.)|(loni==-1000.)|(np.abs(inci)>np.radians(85.)))[0]
             ## remove pixels that were not projected
@@ -392,7 +386,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         maski[IMGI<0.001] = 0
         IMG[:,:,ci]  = IMGI
 
-    INCL, EMIS = get_emis_incl_map(incl, emis, lats, lons, \
+    INCL, EMIS = get_emis_incid_map(incid, emis, lats, lons, \
                                    newlat, newlon, maski, fname, \
                                    num_procs=num_procs,\
                                    load=load)
@@ -647,7 +641,7 @@ def project_part_image(inp, method='linear'):
         raise e
 
 def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, \
-                     trim_saturated=False, sat_threshold=95, **kwargs):
+                     trim_saturated=False, sat_threshold=95, clip_limit=0.008, **kwargs):
     ''' 
         Do the color and gamma correction, and image scaling on the image
 
@@ -667,6 +661,9 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
             If true, save to output PNG defined as `fname_mosaic_RGB.png`
         hist_eq : bool
             Toggle `True` to do histogram equalization to enhance 
+        clip_limit : float
+            Threshold for histogram equalization. 
+            See https://scikit-image.org/docs/dev/api/skimage.exposure.html#skimage.exposure.equalize_adapthist
 
         Outputs
         -------
@@ -696,9 +693,7 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
             IMG2 = IMG2/(np.percentile(IMG2[IMG2>0.], 99.9))
             IMG2 = np.clip(IMG2, 0, 1)
             for ci in range(3):
-                val = IMG2[:,:,ci]
-                p0, p1 = np.percentile(val[val>0.], (2,99))
-                IMG2[:,:,ci] = exposure.equalize_adapthist(IMG2[:,:,ci], clip_limit=kwargs.get('clip_limit', 0.05))#color.hsv2rgb(hsv)
+                IMG2[:,:,ci] = exposure.equalize_adapthist(IMG2[:,:,ci], clip_limit=clip_limit)
 
         IMG2 = IMG2**gamma
         ## normalize the image by the 99.9% percentile
@@ -751,20 +746,20 @@ def plot_ortho(datafile, sat_height_scale=1., facecolor='black'):
 
     plt.show()
 
-def get_emis_incl_map(incl, emis, lat, lon, newlat, newlon, maski, \
+def get_emis_incid_map(incid, emis, lat, lon, newlat, newlon, maski, \
                       fname, num_procs=1, load=True):
     ## flatten and mask out the bad data points
-    incl = incl.flatten(); emis = emis.flatten();
+    incid = incid.flatten(); emis = emis.flatten();
     lat  = lat.flatten();  lon  = lon.flatten()
-    mask = (lat!=-1000)&(lon!=-1000)&(np.abs(incl)<np.radians(89.))
+    mask = (lat!=-1000)&(lon!=-1000)&(np.abs(incid)<np.radians(89.))
 
-    inclsf  = incl[mask].flatten()
+    incidsf  = incid[mask].flatten()
     emisf   = emis[mask].flatten()
     lonf    = lon[mask].flatten()
     latf    = lat[mask].flatten()
 
     ## create the new grid to project onto and
-    ## project the inclination and emission values onto the new grid
+    ## project the incidence and emission values onto the new grid
     LAT, LON = np.meshgrid(newlat, newlon)
     #EMIS = griddata((lonf, latf), emisf, (LON, LAT)).T
     #INCL = griddata((lonf, latf), inclsf, (LON, LAT)).T
@@ -773,23 +768,25 @@ def get_emis_incl_map(incl, emis, lat, lon, newlat, newlon, maski, \
         print("Loading emission data")
         EMIS = np.load(NPY_FOLDER+"%s_emis.npy"%fname)
     else:
+        print("Processing emission angles")
         EMIS = project_to_uniform_grid(lonf, latf, emisf, num_procs=num_procs)
         EMIS[~maski] = np.nan
         np.save(NPY_FOLDER+"%s_emis.npy"%fname, EMIS)
     
-    if load&os.path.exists(NPY_FOLDER+"%s_incl.npy"%fname):
-        print("Loading inclination data")
-        INCL = np.load(NPY_FOLDER+"%s_incl.npy"%fname)
+    if load&os.path.exists(NPY_FOLDER+"%s_incid.npy"%fname):
+        print("Loading incidence data")
+        INCL = np.load(NPY_FOLDER+"%s_incid.npy"%fname)
     else:
-        INCL = project_to_uniform_grid(lonf, latf, inclsf, num_procs=num_procs)
+        print("Processing incidence angles")
+        INCL = project_to_uniform_grid(lonf, latf, incidsf, num_procs=num_procs)
         INCL[~maski] = np.nan
-        np.save(NPY_FOLDER+"%s_incl.npy"%fname, INCL)
+        np.save(NPY_FOLDER+"%s_incid.npy"%fname, INCL)
 
     return (INCL, EMIS)
 
 def scorr_poly(INCL, EMIS, newlat, newlon, IMG):
     '''
-        Fit a 2nd order polynomial in inclination/emission space
+        Fit a 2nd order polynomial in incidence/emission space
         to correct for lighting geometry
     '''
     print("Doing polynomial lighting correction")
@@ -917,7 +914,7 @@ def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7, trim_thresh
 
     # Do the FFT and get the filter
     ifft2 = get_fft(value, radius=radius)
-    plt.imsave(fname+"ifft.png", ifft2)
+    plt.imsave(MASK_FOLDER+fname+"ifft.png", ifft2)
 
     # Divide the image by the filter to remove high frequency noise
     if colorspace != 'rgb':
@@ -944,7 +941,7 @@ def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7, trim_thresh
     # Save the mask as an image
     maskimg = np.zeros((data.shape[0]*data.shape[1]))
     maskimg[mask] = 1
-    plt.imsave(RGB_FOLDER+"%s_Lmask.png"%fname, maskimg.reshape((IMG.shape[0], IMG.shape[1])))
+    plt.imsave(MASK_FOLDER+"%s_Lmask.png"%fname, maskimg.reshape((IMG.shape[0], IMG.shape[1])))
 
     # Trim the input image with this mask
     IMGf  = data.reshape((data.shape[0]*data.shape[1], 3))

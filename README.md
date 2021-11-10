@@ -17,7 +17,10 @@ make
 ```
 
 ## Examples
-See `projection.ipynb` for an example of JunoCam image projection.
+See `examples/projection.ipynb` for an example of JunoCam image projection.
 
-To rerun the projection code, you will need to unzip the `5989-Data.zip` and `5989-ImageSet.zip`
-files, which will create the `DataSet` and `ImageSet` directories. 
+To rerun the projection code, you will need to unzip `8724-Data.zip` and `8724-ImageSet.zip`
+in the `examples/` folder , which will create the `DataSet` and `ImageSet` directories. 
+
+## Multi-image mosaicing
+(Coming soon...)

@@ -23,6 +23,6 @@ CAMERA_IDS  = [-61501, -61502, -61503]
 
 NC_FOLDER  = './nc/'
 MOS_FOLDER = './mos/'
-RGB_FOLDER = './rgb/'
+MASK_FOLDER = './mask/'
 NPY_FOLDER = './npy/'
 

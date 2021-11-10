@@ -265,11 +265,11 @@ class Projector():
             lats = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
             lons = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
             #solar_corr = np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-            incl  =  1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
+            incid  =  1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
             emis     =  1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
             flux_cal =  np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
             
-            process_c(eti, ci, cam2jup.flatten(), lons, lats, incl, emis, flux_cal)
+            process_c(eti, ci, cam2jup.flatten(), lons, lats, incid, emis, flux_cal)
 
             #frame = decompand(frame[:])#*solar_corr[:]
             ''' 
@@ -277,7 +277,6 @@ class Projector():
                 the finest resolution of the slice
             '''
 
-            '''
             dlats = np.gradient(lats)
             dlons = np.gradient(lons)
             
@@ -289,9 +288,7 @@ class Projector():
                 pixres = 0.
             else:
                 pixres = dpix[dpix>0.].min()
-            '''
-            pixres = 1.
-            return (lats, lons, scloc, eti, pixres, incl, emis, flux_cal)
+            return (lats, lons, scloc, eti, pixres, incid, emis, flux_cal)
         except Exception as e:
             raise(e)
             return
@@ -453,7 +450,7 @@ class Projector():
         decompimg = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         rawimg    = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         flux_cal  = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        incl      = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
+        incid      = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         emis      = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         scloc     = np.zeros((self.nframes, 3))
         et        = np.zeros(self.nframes)
@@ -520,7 +517,7 @@ class Projector():
             lon[i,ci,:,:]       = loni
             decompimg[i,ci,:,:] = self.image[startrow:endrow,:]#*scorri
             rawimg[i,ci,:,:]    = self.fullimg[startrow:endrow,:]
-            incl[i,ci,:,:]      = mu0i
+            incid[i,ci,:,:]      = mu0i
             emis[i,ci,:,:]      = mui
             flux_cal[i,ci,:,:]  = flux_cali
             scloc[i,:]            = scloci
@@ -542,7 +539,7 @@ class Projector():
         latVar     = f.createVariable('lat', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
         lonVar     = f.createVariable('lon', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
         imgVar     = f.createVariable('img', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
-        incVar     = f.createVariable('inclination', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
+        incVar     = f.createVariable('incidence', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
         emiVar     = f.createVariable('emission', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
         rawimgVar  = f.createVariable('rawimg', 'uint8', ('nframes', 'ncolors', 'y','x'), zlib=True)
         fluximgVar = f.createVariable('flux', 'float64', ('nframes', 'ncolors', 'y','x'), zlib=True)
@@ -557,7 +554,7 @@ class Projector():
         scVar[:]      = scloc[:]
         etVar[:]      = et[:]
 
-        incVar[:]    = incl
+        incVar[:]    = incid
         emiVar[:]    = emis
         
         f.close()
