@@ -38,14 +38,23 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
             set to None to let it automatically determine the extents from the extents
             of all the images
         scorr_method : string
+
             lighting correction method to use:
+
                 - 'none': no correction
+
                 - 'simple': lambertian correction (output = input/cos(incidence))
+
                 - 'poly': fit a 5th order polynomial for the image brightness in (mu, mu0) space
+
                 - 'fft': use an FFT to correct for brightness variations in the image
+
         load : bool
+
             Set to `True` to load data from files (generated from previous run). 
+
             Set to `False` to regenerate the image.
+
         kwargs: arguments to pass to `map_project`
     '''
 
@@ -255,16 +264,15 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
             Use True to save the mask data as a PNG file [Default: False]
         scorr_method : string
             The type of lighting correction to use:
-            simple : assume Jupiter is a Lambertian surface (works decently
-                    well for some images but does not handle terminators well)
-            poly :   fit a 2nd order polynomial in mu and mu0 based on the 
-                    brightness of the image 
-            fft : do a FFT-based high pass filter to remove low-frequency (large scale)
-                    variations in the brightness of the image. Use the colorspace
-                    variable to pass the colorspace that is used to get the brightness
-                    (e.g., V in HSV space, L in Lab space, etc.)
-            combination: you can combine several methods together. e.g., 'simple+fft'
-                    will run both the simple Lambertian and the FFT. (not recommended)
+
+            - simple : assume Jupiter is a Lambertian surface (works decently well for some images but does not handle terminators well)
+
+            - poly : fit a 2nd order polynomial in mu and mu0 based on the brightness of the image 
+
+            - fft : do a FFT-based high pass filter to remove low-frequency (large scale) variations in the brightness of the image. Use the colorspace variable to pass the colorspace that is used to get the brightness (e.g., V in HSV space, L in Lab space, etc.)
+
+            - combination: you can combine several methods together. e.g., 'simple+fft' will run both the simple Lambertian and the FFT. (not recommended)
+
         load : bool
             Set to `True` to load data from files (generated from previous run). 
             Set to `False` to regenerate the image.
@@ -610,7 +618,7 @@ def project_part_image(inp, method='linear'):
             processed here while mask is the index of the original unstructured
             coordinates that are within this domain. 
         
-        Outputs
+        Returns
         -------
         imgi : numpy.ndarray
             The interpolated array on a regular grid corresponding to 
@@ -665,7 +673,7 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
             Threshold for histogram equalization. 
             See https://scikit-image.org/docs/dev/api/skimage.exposure.html#skimage.exposure.equalize_adapthist
 
-        Outputs
+        Returns
         -------
         IMG2 : numpy.ndarray
             Output color and gamma corrected file with 99-percentile scaling
@@ -673,7 +681,7 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
         Raises
         ------
         AssertionError
-            if `save`=True but no fname defined
+            if `save=True` but no fname defined
     '''
     with nc.Dataset(datafile, "r+") as data:
         IMG  = data.variables['img'][:]
@@ -861,8 +869,8 @@ def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7, trim_thresh
         creating a mask of low-frequency (large scale) light variation which is used to divide
         the original image to remove light gradients in the image.
 
-        Inputs
-        ------
+        Parameters
+        -----------
         IMG : numpy.ndarray
             the input image to be processed
         fname : string
@@ -964,7 +972,7 @@ def get_fft(value, radius):
         radius : float
             The radius of the Gaussian filter (in pixels)
 
-        Outputs
+        Returns
         -------
         ifft2 : numpy.ndarray
             The filter corresponding to the convolution

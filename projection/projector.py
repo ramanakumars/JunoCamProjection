@@ -42,7 +42,7 @@ def decompand(image):
         image : numpy.ndarray
             8-bit input image
 
-        Outputs
+        Returns
         -------
         data : numpy.ndarray
             Original 12-bit image
@@ -224,7 +224,7 @@ class Projector():
             inp : tuple
                 framelet number and color index
 
-            Outputs
+            Returns
             -------
             lats : numpy.ndarray
                 array of latitudes in the same shape as the framelet (128,1648)

@@ -2,8 +2,10 @@ from .globals import *
 
 class CameraModel():
     '''
-        holds the camera model and filter specific
-        variables
+        Holds camera distortion model and filter specific
+        variables.
+        Also contains functions to obtain positions in JUNOCAM frame 
+        see: https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/ik/juno_junocam_v03.ti
     '''
     def __init__(self, filt):
         self.filter  = filt
@@ -22,24 +24,20 @@ class CameraModel():
         self.time_bias    = spice.gdpool('INS%s_START_TIME_BIAS'%self.id, 0,32)[0]
         self.iframe_delay = spice.gdpool('INS%s_INTERFRAME_DELTA'%self.id,0,32)[0]
 
-    ''' 
-    functions to obtain positions in JUNOCAM frame 
-    see: https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/ik/juno_junocam_v03.ti
-    '''
     def pix2vec(self, px):
         '''
             Convert from pixel coordinate to vector in the 
-            JUNO_JUNOCAM reference frame
+            `JUNO_JUNOCAM` reference frame
 
             Parameters
             ----------
             px : array-like
                 x and y position of pixel centers in the camera
 
-            Output
+            Returns
             ------
             v : numpy.ndarray
-                vector in the JUNO_JUNOCAM reference frame
+                vector in the `JUNO_JUNOCAM` reference frame
         '''
         camx = px[0] - self.cx
         camy = px[1] - self.cy
@@ -56,7 +54,7 @@ class CameraModel():
             c : array-like
                 x and y position of pixel centers in the camera
 
-            Output
+            Returns
             ------
             xd : float
                 x position of the pixel after removing barrel distortion
@@ -80,7 +78,7 @@ class CameraModel():
             c : array-like
                 x and y position of undistorted pixel centers in the camera
 
-            Output
+            Returns
             ------
             xd : float
                 x position of the pixel after adding barrel distortion
@@ -104,7 +102,7 @@ class CameraModel():
             v : array-like
                 vector in the JUNO_JUNOCAM reference frame
 
-            Output
+            Returns
             ------
             x : float
                 x-center of the pixel in the plate
