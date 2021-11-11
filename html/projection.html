@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html class="writer-html4" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JunoCam projection module functions &mdash; JunoCamProjection  documentation</title><link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+        <script type="text/javascript" src="_static/jquery.js"></script>
+        <script type="text/javascript" src="_static/underscore.js"></script>
+        <script type="text/javascript" src="_static/doctools.js"></script>
+        <script type="text/javascript" src="_static/language_data.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Getting Started" href="readme_link.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="index.html" class="icon icon-home"> JunoCamProjection
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="readme_link.html">Getting Started</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Projection module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#module-projection.camera_funcs">projection.camera_funcs module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-projection.cython_utils">projection.cython_utils module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-projection.globals">projection.globals module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-projection.mosaic_funcs">projection.mosaic_funcs module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-projection.projector">projection.projector module</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">JunoCamProjection</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>JunoCam projection module functions</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <div class="section" id="junocam-projection-module-functions">
+<h1>JunoCam projection module functions<a class="headerlink" href="#junocam-projection-module-functions" title="Permalink to this headline">¶</a></h1>
+<p>The main source for the projection and mosaicing pipelines are in the
+<cite>projector.py</cite> and the <cite>mosaic_funcs.py</cite> files.</p>
+<div class="section" id="module-projection.camera_funcs">
+<span id="projection-camera-funcs-module"></span><h2>projection.camera_funcs module<a class="headerlink" href="#module-projection.camera_funcs" title="Permalink to this headline">¶</a></h2>
+<dl class="class">
+<dt id="projection.camera_funcs.CameraModel">
+<em class="property">class </em><code class="descclassname">projection.camera_funcs.</code><code class="descname">CameraModel</code><span class="sig-paren">(</span><em>filt</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/camera_funcs.html#CameraModel"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.camera_funcs.CameraModel" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Holds camera distortion model and filter specific
+variables.
+Also contains functions to obtain positions in JUNOCAM frame.
+See <a class="reference external" href="https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/ik/juno_junocam_v03.ti">https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/ik/juno_junocam_v03.ti</a></p>
+<dl class="method">
+<dt id="projection.camera_funcs.CameraModel.distort">
+<code class="descname">distort</code><span class="sig-paren">(</span><em>c</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/camera_funcs.html#CameraModel.distort"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.camera_funcs.CameraModel.distort" title="Permalink to this definition">¶</a></dt>
+<dd><p>Adds barrel distortion to the image</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>c</strong> (<em>array-like</em>) – x and y position of undistorted pixel centers in the camera</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><ul class="simple">
+<li><strong>xd</strong> (<em>float</em>) – x position of the pixel after adding barrel distortion</li>
+<li><strong>yd</strong> (<em>float</em>) – y position of the pixel after adding barrel distortion</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="projection.camera_funcs.CameraModel.pix2vec">
+<code class="descname">pix2vec</code><span class="sig-paren">(</span><em>px</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/camera_funcs.html#CameraModel.pix2vec"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.camera_funcs.CameraModel.pix2vec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert from pixel coordinate to vector in the
+<cite>JUNO_JUNOCAM</cite> reference frame</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>px</strong> (<em>array-like</em>) – x and y position of pixel centers in the camera</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>v</strong> – vector in the <cite>JUNO_JUNOCAM</cite> reference frame</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">numpy.ndarray</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="projection.camera_funcs.CameraModel.undistort">
+<code class="descname">undistort</code><span class="sig-paren">(</span><em>c</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/camera_funcs.html#CameraModel.undistort"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.camera_funcs.CameraModel.undistort" title="Permalink to this definition">¶</a></dt>
+<dd><p>Removes the barrel distortion in the JunoCam image</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>c</strong> (<em>array-like</em>) – x and y position of pixel centers in the camera</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><ul class="simple">
+<li><strong>xd</strong> (<em>float</em>) – x position of the pixel after removing barrel distortion</li>
+<li><strong>yd</strong> (<em>float</em>) – y position of the pixel after removing barrel distortion</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="projection.camera_funcs.CameraModel.vec2pix">
+<code class="descname">vec2pix</code><span class="sig-paren">(</span><em>v</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/camera_funcs.html#CameraModel.vec2pix"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.camera_funcs.CameraModel.vec2pix" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert a vector in the JUNO_JUNOCAM reference frame
+to pixel coordinates on the plate</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>v</strong> (<em>array-like</em>) – vector in the JUNO_JUNOCAM reference frame</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><ul class="simple">
+<li><strong>x</strong> (<em>float</em>) – x-center of the pixel in the plate</li>
+<li><strong>y</strong> (<em>float</em>) – y-center of the pixel in the plate</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-projection.cython_utils">
+<span id="projection-cython-utils-module"></span><h2>projection.cython_utils module<a class="headerlink" href="#module-projection.cython_utils" title="Permalink to this headline">¶</a></h2>
+<p>Contains the global Cythonized variables for use in the
+C part of the projection pipeline.</p>
+</div>
+<div class="section" id="module-projection.globals">
+<span id="projection-globals-module"></span><h2>projection.globals module<a class="headerlink" href="#module-projection.globals" title="Permalink to this headline">¶</a></h2>
+<p>Contains global module imports, filter and camera IDs for SPICE
+and global folder structure variables</p>
+</div>
+<div class="section" id="module-projection.mosaic_funcs">
+<span id="projection-mosaic-funcs-module"></span><h2>projection.mosaic_funcs module<a class="headerlink" href="#module-projection.mosaic_funcs" title="Permalink to this headline">¶</a></h2>
+<dl class="function">
+<dt id="projection.mosaic_funcs.color_correction">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">color_correction</code><span class="sig-paren">(</span><em>datafile</em>, <em>gamma=1.0</em>, <em>hist_eq=True</em>, <em>fname=None</em>, <em>save=False</em>, <em>trim_saturated=False</em>, <em>sat_threshold=95</em>, <em>clip_limit=0.008</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#color_correction"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.color_correction" title="Permalink to this definition">¶</a></dt>
+<dd><p>Do the color and gamma correction, and image scaling on the image</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>IMG</strong> (<em>numpy.ndarray</em>) – Input image</li>
+<li><strong>newlon</strong> (<em>numpy.ndarray</em>) – Regularly intervalled longitude array</li>
+<li><strong>newlat</strong> (<em>numpy.ndarray</em>) – Regularly intervalled latitude array</li>
+<li><strong>gamma</strong> (<em>float</em>) – Gamma correction – img_out = img**gamma [Default : 1.0]</li>
+<li><strong>fname</strong> (<em>string</em>) – filename to save the image [Default: None] – see <cite>save</cite></li>
+<li><strong>save</strong> (<em>bool</em>) – If true, save to output PNG defined as <cite>fname_mosaic_RGB.png</cite></li>
+<li><strong>hist_eq</strong> (<em>bool</em>) – Toggle <cite>True</cite> to do histogram equalization to enhance</li>
+<li><strong>clip_limit</strong> (<em>float</em>) – Threshold for histogram equalization.
+See <a class="reference external" href="https://scikit-image.org/docs/dev/api/skimage.exposure.html#skimage.exposure.equalize_adapthist">https://scikit-image.org/docs/dev/api/skimage.exposure.html#skimage.exposure.equalize_adapthist</a></li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><strong>IMG2</strong> – Output color and gamma corrected file with 99-percentile scaling</p>
+</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body"><p class="first">numpy.ndarray</p>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Raises:</th><td class="field-body"><p class="first last"><code class="xref py py-exc docutils literal notranslate"><span class="pre">AssertionError</span></code> – if <cite>save=True</cite> but no fname defined</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="projection.mosaic_funcs.get_emis_incid_map">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">get_emis_incid_map</code><span class="sig-paren">(</span><em>incid</em>, <em>emis</em>, <em>lat</em>, <em>lon</em>, <em>newlat</em>, <em>newlon</em>, <em>maski</em>, <em>fname</em>, <em>num_procs=1</em>, <em>load=True</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#get_emis_incid_map"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.get_emis_incid_map" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="function">
+<dt id="projection.mosaic_funcs.get_fft">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">get_fft</code><span class="sig-paren">(</span><em>value</em>, <em>radius</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#get_fft"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.get_fft" title="Permalink to this definition">¶</a></dt>
+<dd><p>Performs a FFT to convolve a Gaussian filter
+with the input image.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>value</strong> (<em>numpy.ndarray</em>) – The input 2D image to process</li>
+<li><strong>radius</strong> (<em>float</em>) – The radius of the Gaussian filter (in pixels)</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><strong>ifft2</strong> – The filter corresponding to the convolution</p>
+</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body"><p class="first last">numpy.ndarray</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="projection.mosaic_funcs.initializer">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">initializer</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#initializer"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.initializer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Ignore CTRL+C in the worker process.</p>
+</dd></dl>
+
+<dl class="function">
+<dt id="projection.mosaic_funcs.map_project">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">map_project</code><span class="sig-paren">(</span><em>file</em>, <em>long=None</em>, <em>latg=None</em>, <em>pixres=None</em>, <em>num_procs=1</em>, <em>save=False</em>, <em>savemask=False</em>, <em>scorr_method='simple'</em>, <em>load=False</em>, <em>ret_inc=False</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#map_project"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.map_project" title="Permalink to this definition">¶</a></dt>
+<dd><p>Interpolate a single file onto a regular lon/lat grid. By default,
+the images are created in a grid that is 5 degrees bigger than the
+extent of the raw image observed by JunoCam. Then, this is interpolated
+to fit the required mesh. This is in an effort to segment the mosaicing
+process, where we can generate a set of map-projected images beforehand,
+and then do the mosaicing process afterwords, without wasting too much
+space with unnecessary data.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>newlon</strong> (<em>numpy.ndarray</em>) – The new regularly intervaled longitude array</li>
+<li><strong>newlat</strong> (<em>numpy.ndarray</em>) – The new regularly intervaled latitude array</li>
+<li><strong>file</strong> (<em>string</em>) – Input netCDF file with the projected data</li>
+<li><strong>num_procs</strong> (<em>int</em>) – Number of threads to use to grid [Default: 1]</li>
+<li><strong>save</strong> (<em>bool</em>) – Use True to save the output grid data into a
+netCDF file [Default: False]</li>
+<li><strong>savemask</strong> (<em>bool</em>) – Use True to save the mask data as a PNG file [Default: False]</li>
+<li><strong>scorr_method</strong> (<em>string</em>) – The type of lighting correction to use:<ul>
+<li>simple : assume Jupiter is a Lambertian surface (works decently well for some images but does not handle terminators well)</li>
+<li>poly : fit a 2nd order polynomial in mu and mu0 based on the brightness of the image</li>
+<li>fft : do a FFT-based high pass filter to remove low-frequency (large scale) variations in the brightness of the image. Use the colorspace variable to pass the colorspace that is used to get the brightness (e.g., V in HSV space, L in Lab space, etc.)</li>
+<li>combination: you can combine several methods together. e.g., ‘simple+fft’ will run both the simple Lambertian and the FFT. (not recommended)</li>
+</ul>
+</li>
+<li><strong>load</strong> (<em>bool</em>) – Set to <cite>True</cite> to load data from files (generated from previous run).
+Set to <cite>False</cite> to regenerate the image.</li>
+<li><strong>ret_inc</strong> (<em>bool</em>) – Set to <cite>True</cite> to return the incidence and emission angle data.</li>
+<li><strong>**kwargs</strong> (<em>arguments to pass to the scorr functions</em>)</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="projection.mosaic_funcs.map_project_multi">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">map_project_multi</code><span class="sig-paren">(</span><em>files</em>, <em>pixres=0.04</em>, <em>num_procs=1</em>, <em>extents=None</em>, <em>scorr_method='fft'</em>, <em>load=False</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#map_project_multi"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.map_project_multi" title="Permalink to this definition">¶</a></dt>
+<dd><p>Project multiple images into one mosaic. Use <cite>scorr_method</cite> to
+do lighting correction so that there are no visible seams.
+Each image in the list is map projected in the same resolution and then
+interpolated to match the mosaic grid.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last">
+<li><p class="first"><strong>files</strong> (<em>list</em>) – list of files from the projection pipeline to mosaic</p>
+</li>
+<li><p class="first"><strong>pixres</strong> (<em>float</em>) – pixel resolution in degrees/pixel</p>
+</li>
+<li><p class="first"><strong>num_procs</strong> (<em>int</em>) – number of processors to use (used in the projection and interpolation)</p>
+</li>
+<li><p class="first"><strong>extents</strong> (<em>list (optional)</em>) – bounding box in the format [lonmin, lonmax, latmin, latmax] (in degrees)
+set to None to let it automatically determine the extents from the extents
+of all the images</p>
+</li>
+<li><p class="first"><strong>scorr_method</strong> (<em>string</em>) –</p>
+<p>lighting correction method to use:</p>
+<blockquote>
+<div><ul class="simple">
+<li>‘none’: no correction</li>
+<li>‘simple’: lambertian correction (output = input/cos(incidence))</li>
+<li>‘poly’: fit a 5th order polynomial for the image brightness in (mu, mu0) space</li>
+<li>‘fft’: use an FFT to correct for brightness variations in the image</li>
+</ul>
+</div></blockquote>
+</li>
+<li><p class="first"><strong>load</strong> (<em>bool</em>) – Set to <cite>True</cite> to load data from files (generated from previous run).</p>
+<p>Set to <cite>False</cite> to regenerate the image.</p>
+</li>
+<li><p class="first"><strong>kwargs</strong> (arguments to pass to <cite>map_project</cite>)</p>
+</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="projection.mosaic_funcs.plot_ortho">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">plot_ortho</code><span class="sig-paren">(</span><em>datafile</em>, <em>sat_height_scale=1.0</em>, <em>facecolor='black'</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#plot_ortho"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.plot_ortho" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="function">
+<dt id="projection.mosaic_funcs.project_part_image">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">project_part_image</code><span class="sig-paren">(</span><em>inp</em>, <em>method='linear'</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#project_part_image"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.project_part_image" title="Permalink to this definition">¶</a></dt>
+<dd><p>Main gridding code. Interpolates the unstructured data onto
+a regular grid</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>inp</strong> (<em>tuple</em>) – Contains startxind, endxind, startyind, endyind and mask
+The indices define the slice of the new image array that will be
+processed here while mask is the index of the original unstructured
+coordinates that are within this domain.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>imgi</strong> – The interpolated array on a regular grid corresponding to
+[startyind:endyind,startxind:endxind] of the full image</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">numpy.ndarray</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="projection.mosaic_funcs.project_to_uniform_grid">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">project_to_uniform_grid</code><span class="sig-paren">(</span><em>lon</em>, <em>lat</em>, <em>img</em>, <em>num_procs=1</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#project_to_uniform_grid"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.project_to_uniform_grid" title="Permalink to this definition">¶</a></dt>
+<dd><p>Main driver for the regridding. Handles the multiprocessing
+part of the process.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>lon</strong> (<em>numpy.ndarray</em>) – Original unstructured longitude data</li>
+<li><strong>lat</strong> (<em>numpy.ndarray</em>) – Original unstructured latitude data</li>
+<li><strong>img</strong> (<em>numpy.ndarray</em>) – Unstructured image data corresponding to that lon/lat</li>
+<li><strong>num_procs</strong> (<em>int</em>) – number of threads to create to grid the data</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><strong>IMG</strong> – Data interpolated onto a regular grid</p>
+</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body"><p class="first last">numpy.ndarray</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="projection.mosaic_funcs.scorr_fft">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">scorr_fft</code><span class="sig-paren">(</span><em>IMG</em>, <em>fname</em>, <em>radius=4.0</em>, <em>colorspace='hsv'</em>, <em>trim_rad=0.7</em>, <em>trim_threshold=0.95</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#scorr_fft"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.scorr_fft" title="Permalink to this definition">¶</a></dt>
+<dd><p>Do a correction using a FFT based high pass filter. This works by
+creating a mask of low-frequency (large scale) light variation which is used to divide
+the original image to remove light gradients in the image.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>IMG</strong> (<em>numpy.ndarray</em>) – the input image to be processed</li>
+<li><strong>fname</strong> (<em>string</em>) – the name of the file (used for outputing the mask and FFT image)</li>
+<li><strong>radius</strong> (<em>float</em>) – the radius of the Guassian filter that will be convolved
+with the image to extract the low frqeuency features</li>
+<li><strong>trim_rad</strong> (<em>float</em>) – the radius to use to clip the image (to remove noise at the edges).
+The radius is given by <cite>trim_rad*radius</cite>, so <cite>trim_rad</cite> is the fraction/multiple
+of the original radius to use to trim the edges</li>
+<li><strong>trim_threshold</strong> (<em>float</em>) – The threshold value for the trimming mask
+to remove edge noise. Values for the mask within the image will be 1
+while outside the image will be 0. Near the edges, the values will be
+in between. Choose a value close to 1 to clip close to the image, values
+close to zero will extend the edge.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="projection.mosaic_funcs.scorr_poly">
+<code class="descclassname">projection.mosaic_funcs.</code><code class="descname">scorr_poly</code><span class="sig-paren">(</span><em>INCL</em>, <em>EMIS</em>, <em>newlat</em>, <em>newlon</em>, <em>IMG</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/mosaic_funcs.html#scorr_poly"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.mosaic_funcs.scorr_poly" title="Permalink to this definition">¶</a></dt>
+<dd><p>Fit a 2nd order polynomial in incidence/emission space
+to correct for lighting geometry</p>
+</dd></dl>
+
+</div>
+<div class="section" id="module-projection.projector">
+<span id="projection-projector-module"></span><h2>projection.projector module<a class="headerlink" href="#module-projection.projector" title="Permalink to this headline">¶</a></h2>
+<dl class="class">
+<dt id="projection.projector.Projector">
+<em class="property">class </em><code class="descclassname">projection.projector.</code><code class="descname">Projector</code><span class="sig-paren">(</span><em>imagefolder</em>, <em>meta</em>, <em>kerneldir='.'</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/projector.html#Projector"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.projector.Projector" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>The main projector class that determines the surface intercept points
+of each pixel in a JunoCam image</p>
+<dl class="method">
+<dt id="projection.projector.Projector.find_jitter">
+<code class="descname">find_jitter</code><span class="sig-paren">(</span><em>jitter_max=25</em>, <em>plot=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/projector.html#Projector.find_jitter"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.projector.Projector.find_jitter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Find the jitter in the starting time of the image
+by fitting Jupiter’s limb in the framelet</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>jitter_max</strong> (<em>float, optional</em>) – Maximum jitter magnitude (in ms) [Default: 25]</li>
+<li><strong>plot</strong> (<em>bool, optional</em>) – Flag to toggle creating a plot of the jitter search
+[Default: False]</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="projection.projector.Projector.get_limb">
+<code class="descname">get_limb</code><span class="sig-paren">(</span><em>eti</em>, <em>cami</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/projector.html#Projector.get_limb"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.projector.Projector.get_limb" title="Permalink to this definition">¶</a></dt>
+<dd><p>Find the limb of the planet at a given time
+for a specific JunoCam filter</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>eti</strong> (<em>float</em>) – Spacecraft ET time for finding the limb</li>
+<li><strong>cami</strong> (<cite>CameraModel</cite>) – The <cite>CameraModel</cite> object that holds the filter information</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><strong>limbs_jcam</strong> – List of points in the <cite>JUNO_JUNOCAM</cite> frame that contains
+the limb of the planet at the given time</p>
+</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body"><p class="first last"><cite>numpy.ndarray</cite></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="projection.projector.Projector.load_kernels">
+<code class="descname">load_kernels</code><span class="sig-paren">(</span><em>KERNEL_DATAFOLDER</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/projector.html#Projector.load_kernels"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.projector.Projector.load_kernels" title="Permalink to this definition">¶</a></dt>
+<dd><p>Determines and loads the required SPICE data kernels
+to project and process the current image</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>KERNEL_DATAFOLDER</strong> (<em>string</em>) – path to the location of the Juno SPICE kernels</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Raises:</th><td class="field-body"><code class="xref py py-exc docutils literal notranslate"><span class="pre">AssertionError</span></code> – if no kernels were found for the date range</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="projection.projector.Projector.process">
+<code class="descname">process</code><span class="sig-paren">(</span><em>num_procs=1</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/projector.html#Projector.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.projector.Projector.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Main driver for the projection. Determines line of sight
+intercepts for each pixel on the JunoCam image</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>num_procs</strong> (<em>int</em>) – Number of CPUs to use for multiprocessing [Default: 1]</li>
+<li><strong>jitter</strong> (<em>float</em>) – offset in ms, to add to the start time to compensate for
+jitter [Default: 0]</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="projection.projector.Projector.process_n_c">
+<code class="descname">process_n_c</code><span class="sig-paren">(</span><em>inp</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/projector.html#Projector.process_n_c"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.projector.Projector.process_n_c" title="Permalink to this definition">¶</a></dt>
+<dd><p>Project a given frame and filter
+used in the multi-core version</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>inp</strong> (<em>tuple</em>) – framelet number and color index</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><ul class="simple">
+<li><strong>lats</strong> (<em>numpy.ndarray</em>) – array of latitudes in the same shape as the framelet (128,1648)</li>
+<li><strong>lons</strong> (<em>numpy.ndarray</em>) – array of longitudes in the same shape as the framelet (128,1648)</li>
+<li><strong>scloc</strong> (<em>numpy.ndarray</em>) – spacecraft position during the frame – shape (3,)</li>
+<li><strong>eti</strong> (<em>double</em>) – epoch of the spacecraft’s observation for the given frame</li>
+<li><strong>pixres</strong> (<em>numpy.ndarray</em>) – array of spatial resolutions of that pixel of shape (128,1648)</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="function">
+<dt id="projection.projector.decompand">
+<code class="descclassname">projection.projector.</code><code class="descname">decompand</code><span class="sig-paren">(</span><em>image</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/projection/projector.html#decompand"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#projection.projector.decompand" title="Permalink to this definition">¶</a></dt>
+<dd><p>Decompands the image from the 8-bit in the public release
+to the original 12-bit shot by JunoCam. See <a class="reference external" href="https://github.com/kmgill/cassini_processing">https://github.com/kmgill/cassini_processing</a></p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>image</strong> (<em>numpy.ndarray</em>) – 8-bit input image</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>data</strong> – Original 12-bit image</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">numpy.ndarray</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="readme_link.html" class="btn btn-neutral float-left" title="Getting Started" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2021, Ramanakumar Sankar.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

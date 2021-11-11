@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html class="writer-html4" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>projection.camera_funcs &mdash; JunoCamProjection  documentation</title><link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../../_static/jquery.js"></script>
+        <script type="text/javascript" src="../../_static/underscore.js"></script>
+        <script type="text/javascript" src="../../_static/doctools.js"></script>
+        <script type="text/javascript" src="../../_static/language_data.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> JunoCamProjection
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../readme_link.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../projection.html">Projection module</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">JunoCamProjection</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>projection.camera_funcs</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for projection.camera_funcs</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">.globals</span> <span class="kn">import</span> <span class="o">*</span>
+
+<div class="viewcode-block" id="CameraModel"><a class="viewcode-back" href="../../projection.html#projection.camera_funcs.CameraModel">[docs]</a><span class="k">class</span> <span class="nc">CameraModel</span><span class="p">():</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Holds camera distortion model and filter specific</span>
+<span class="sd">        variables.</span>
+<span class="sd">        Also contains functions to obtain positions in JUNOCAM frame.</span>
+<span class="sd">        See https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/ik/juno_junocam_v03.ti</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filt</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">filter</span>  <span class="o">=</span> <span class="n">filt</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">id</span>      <span class="o">=</span> <span class="n">CAMERA_IDS</span><span class="p">[</span><span class="n">filt</span><span class="p">]</span>
+
+        <span class="c1">## get the camera distortion data </span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">k1</span>      <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">gdpool</span><span class="p">(</span><span class="s1">&#39;INS</span><span class="si">%s</span><span class="s1">_DISTORTION_K1&#39;</span><span class="o">%</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">),</span><span class="mi">0</span><span class="p">,</span><span class="mi">32</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">k2</span>      <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">gdpool</span><span class="p">(</span><span class="s1">&#39;INS</span><span class="si">%s</span><span class="s1">_DISTORTION_K2&#39;</span><span class="o">%</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">),</span><span class="mi">0</span><span class="p">,</span><span class="mi">32</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cx</span>      <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">gdpool</span><span class="p">(</span><span class="s1">&#39;INS</span><span class="si">%s</span><span class="s1">_DISTORTION_X&#39;</span><span class="o">%</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">),</span><span class="mi">0</span><span class="p">,</span><span class="mi">32</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cy</span>      <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">gdpool</span><span class="p">(</span><span class="s1">&#39;INS</span><span class="si">%s</span><span class="s1">_DISTORTION_Y&#39;</span><span class="o">%</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">),</span><span class="mi">0</span><span class="p">,</span><span class="mi">32</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flength</span> <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">gdpool</span><span class="p">(</span><span class="s1">&#39;INS</span><span class="si">%s</span><span class="s1">_FOCAL_LENGTH&#39;</span><span class="o">%</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">),</span><span class="mi">0</span><span class="p">,</span><span class="mi">32</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">psize</span>   <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">gdpool</span><span class="p">(</span><span class="s1">&#39;INS</span><span class="si">%s</span><span class="s1">_PIXEL_SIZE&#39;</span><span class="o">%</span><span class="p">(</span>   <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">),</span><span class="mi">0</span><span class="p">,</span><span class="mi">32</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">f1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">flength</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">psize</span>
+
+        <span class="c1">## get the timing bias </span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">time_bias</span>    <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">gdpool</span><span class="p">(</span><span class="s1">&#39;INS</span><span class="si">%s</span><span class="s1">_START_TIME_BIAS&#39;</span><span class="o">%</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span><span class="mi">32</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">iframe_delay</span> <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">gdpool</span><span class="p">(</span><span class="s1">&#39;INS</span><span class="si">%s</span><span class="s1">_INTERFRAME_DELTA&#39;</span><span class="o">%</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">32</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+<div class="viewcode-block" id="CameraModel.pix2vec"><a class="viewcode-back" href="../../projection.html#projection.camera_funcs.CameraModel.pix2vec">[docs]</a>    <span class="k">def</span> <span class="nf">pix2vec</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">px</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            Convert from pixel coordinate to vector in the </span>
+<span class="sd">            `JUNO_JUNOCAM` reference frame</span>
+
+<span class="sd">            Parameters</span>
+<span class="sd">            ----------</span>
+<span class="sd">            px : array-like</span>
+<span class="sd">                x and y position of pixel centers in the camera</span>
+
+<span class="sd">            Returns</span>
+<span class="sd">            ------</span>
+<span class="sd">            v : numpy.ndarray</span>
+<span class="sd">                vector in the `JUNO_JUNOCAM` reference frame</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">camx</span> <span class="o">=</span> <span class="n">px</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">cx</span>
+        <span class="n">camy</span> <span class="o">=</span> <span class="n">px</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">cy</span>
+        <span class="n">cam</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">undistort</span><span class="p">([</span><span class="n">camx</span><span class="p">,</span> <span class="n">camy</span><span class="p">])</span>
+        <span class="n">v</span>   <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="n">cam</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">cam</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">f1</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">v</span></div>
+
+<div class="viewcode-block" id="CameraModel.undistort"><a class="viewcode-back" href="../../projection.html#projection.camera_funcs.CameraModel.undistort">[docs]</a>    <span class="k">def</span> <span class="nf">undistort</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">c</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            Removes the barrel distortion in the JunoCam image</span>
+
+<span class="sd">            Parameters</span>
+<span class="sd">            ----------</span>
+<span class="sd">            c : array-like</span>
+<span class="sd">                x and y position of pixel centers in the camera</span>
+
+<span class="sd">            Returns</span>
+<span class="sd">            ------</span>
+<span class="sd">            xd : float</span>
+<span class="sd">                x position of the pixel after removing barrel distortion</span>
+<span class="sd">            yd : float</span>
+<span class="sd">                y position of the pixel after removing barrel distortion</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">xd</span><span class="p">,</span> <span class="n">yd</span> <span class="o">=</span> <span class="n">c</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">c</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+            <span class="n">r2</span> <span class="o">=</span> <span class="p">(</span><span class="n">xd</span><span class="o">**</span><span class="mf">2.</span> <span class="o">+</span> <span class="n">yd</span><span class="o">**</span><span class="mf">2.</span><span class="p">)</span>
+            <span class="n">dr</span> <span class="o">=</span> <span class="mf">1.</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">k1</span><span class="o">*</span><span class="n">r2</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">k2</span><span class="o">*</span><span class="n">r2</span><span class="o">*</span><span class="n">r2</span>
+            <span class="n">xd</span> <span class="o">=</span> <span class="n">c</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">/</span><span class="n">dr</span>
+            <span class="n">yd</span> <span class="o">=</span> <span class="n">c</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">/</span><span class="n">dr</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">xd</span><span class="p">,</span> <span class="n">yd</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CameraModel.distort"><a class="viewcode-back" href="../../projection.html#projection.camera_funcs.CameraModel.distort">[docs]</a>    <span class="k">def</span> <span class="nf">distort</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">c</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            Adds barrel distortion to the image</span>
+
+<span class="sd">            Parameters</span>
+<span class="sd">            ----------</span>
+<span class="sd">            c : array-like</span>
+<span class="sd">                x and y position of undistorted pixel centers in the camera</span>
+
+<span class="sd">            Returns</span>
+<span class="sd">            ------</span>
+<span class="sd">            xd : float</span>
+<span class="sd">                x position of the pixel after adding barrel distortion</span>
+<span class="sd">            yd : float</span>
+<span class="sd">                y position of the pixel after adding barrel distortion</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">xd</span><span class="p">,</span> <span class="n">yd</span> <span class="o">=</span> <span class="n">c</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">c</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">r2</span> <span class="o">=</span> <span class="p">(</span><span class="n">xd</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">yd</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">dr</span> <span class="o">=</span> <span class="mi">1</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">k1</span><span class="o">*</span><span class="n">r2</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">k2</span><span class="o">*</span><span class="n">r2</span><span class="o">*</span><span class="n">r2</span>
+        <span class="n">xd</span> <span class="o">*=</span> <span class="n">dr</span>
+        <span class="n">yd</span> <span class="o">*=</span> <span class="n">dr</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">xd</span><span class="p">,</span> <span class="n">yd</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="CameraModel.vec2pix"><a class="viewcode-back" href="../../projection.html#projection.camera_funcs.CameraModel.vec2pix">[docs]</a>    <span class="k">def</span> <span class="nf">vec2pix</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            Convert a vector in the JUNO_JUNOCAM reference frame</span>
+<span class="sd">            to pixel coordinates on the plate</span>
+
+<span class="sd">            Parameters</span>
+<span class="sd">            ----------</span>
+<span class="sd">            v : array-like</span>
+<span class="sd">                vector in the JUNO_JUNOCAM reference frame</span>
+
+<span class="sd">            Returns</span>
+<span class="sd">            ------</span>
+<span class="sd">            x : float</span>
+<span class="sd">                x-center of the pixel in the plate</span>
+<span class="sd">            y : float</span>
+<span class="sd">                y-center of the pixel in the plate</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">alpha</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">f1</span>
+        <span class="n">cam</span>   <span class="o">=</span> <span class="p">[</span><span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">/</span><span class="n">alpha</span><span class="p">,</span> <span class="n">v</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">/</span><span class="n">alpha</span><span class="p">]</span>
+        <span class="n">cam</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">distort</span><span class="p">(</span><span class="n">cam</span><span class="p">)</span>
+        <span class="n">x</span>     <span class="o">=</span> <span class="n">cam</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">cx</span>
+        <span class="n">y</span>     <span class="o">=</span> <span class="n">cam</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">cy</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span><span class="n">y</span><span class="p">)</span></div></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2021, Ramanakumar Sankar.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

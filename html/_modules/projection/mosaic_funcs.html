@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html class="writer-html4" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>projection.mosaic_funcs &mdash; JunoCamProjection  documentation</title><link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../../_static/jquery.js"></script>
+        <script type="text/javascript" src="../../_static/underscore.js"></script>
+        <script type="text/javascript" src="../../_static/doctools.js"></script>
+        <script type="text/javascript" src="../../_static/language_data.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> JunoCamProjection
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../readme_link.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../projection.html">Projection module</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">JunoCamProjection</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>projection.mosaic_funcs</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for projection.mosaic_funcs</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">.camera_funcs</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="n">NLAT_SLICE</span>  <span class="o">=</span> <span class="mi">20</span>
+<span class="n">NLON_SLICE</span>  <span class="o">=</span> <span class="mi">20</span>
+
+<span class="n">shared_lat</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">shared_lon</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">shared_img</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">shared_LON</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">shared_LAT</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">shared_IMG</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">nlon</span>       <span class="o">=</span> <span class="mi">0</span>
+<span class="n">nlat</span>       <span class="o">=</span> <span class="mi">0</span>
+
+<div class="viewcode-block" id="initializer"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.initializer">[docs]</a><span class="k">def</span> <span class="nf">initializer</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Ignore CTRL+C in the worker process.&quot;&quot;&quot;</span>
+    <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIG_IGN</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="map_project_multi"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.map_project_multi">[docs]</a><span class="k">def</span> <span class="nf">map_project_multi</span><span class="p">(</span><span class="n">files</span><span class="p">,</span> <span class="n">pixres</span><span class="o">=</span><span class="mf">1.</span><span class="o">/</span><span class="mf">25.</span><span class="p">,</span> <span class="n">num_procs</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">extents</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> \
+                      <span class="n">scorr_method</span><span class="o">=</span><span class="s1">&#39;fft&#39;</span><span class="p">,</span> <span class="n">load</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Project multiple images into one mosaic. Use `scorr_method` to </span>
+<span class="sd">        do lighting correction so that there are no visible seams. </span>
+<span class="sd">        Each image in the list is map projected in the same resolution and then </span>
+<span class="sd">        interpolated to match the mosaic grid.</span>
+
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        files : list</span>
+<span class="sd">            list of files from the projection pipeline to mosaic</span>
+<span class="sd">        pixres : float</span>
+<span class="sd">            pixel resolution in degrees/pixel</span>
+<span class="sd">        num_procs : int</span>
+<span class="sd">            number of processors to use (used in the projection and interpolation)</span>
+<span class="sd">        extents : list (optional)</span>
+<span class="sd">            bounding box in the format [lonmin, lonmax, latmin, latmax] (in degrees)</span>
+<span class="sd">            set to None to let it automatically determine the extents from the extents</span>
+<span class="sd">            of all the images</span>
+<span class="sd">        scorr_method : string</span>
+
+<span class="sd">            lighting correction method to use:</span>
+
+<span class="sd">                - &#39;none&#39;: no correction</span>
+
+<span class="sd">                - &#39;simple&#39;: lambertian correction (output = input/cos(incidence))</span>
+
+<span class="sd">                - &#39;poly&#39;: fit a 5th order polynomial for the image brightness in (mu, mu0) space</span>
+
+<span class="sd">                - &#39;fft&#39;: use an FFT to correct for brightness variations in the image</span>
+
+<span class="sd">        load : bool</span>
+
+<span class="sd">            Set to `True` to load data from files (generated from previous run). </span>
+
+<span class="sd">            Set to `False` to regenerate the image.</span>
+
+<span class="sd">        kwargs: arguments to pass to `map_project`</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">nfiles</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">)</span>
+
+    <span class="n">lats</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">lons</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">incs</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="c1"># Load all the files and get the lat/lon</span>
+    <span class="c1"># info as well as the image and lighting geometry</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">file</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">files</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">nc</span><span class="o">.</span><span class="n">Dataset</span><span class="p">(</span><span class="n">NC_FOLDER</span><span class="o">+</span><span class="n">file</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">dataset</span><span class="p">:</span>
+            <span class="n">lati</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;lat&#39;</span><span class="p">][:]</span>
+            <span class="n">loni</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;lon&#39;</span><span class="p">][:]</span>
+            <span class="n">inci</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;incidence&#39;</span><span class="p">][:]</span>
+            
+            <span class="n">lon_rot</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;lon_rot&#39;</span><span class="p">,</span> <span class="mf">0.</span><span class="p">)</span>
+            <span class="n">loni</span><span class="p">[</span><span class="n">loni</span><span class="o">!=-</span><span class="mi">1000</span><span class="p">]</span> <span class="o">+=</span> <span class="n">lon_rot</span>
+            <span class="n">loni</span><span class="p">[(</span><span class="n">loni</span> <span class="o">&lt;</span> <span class="o">-</span><span class="mf">180.</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">loni</span><span class="o">!=-</span><span class="mi">1000</span><span class="p">)]</span> <span class="o">+=</span> <span class="mf">360.</span>
+            <span class="n">loni</span><span class="p">[</span><span class="n">loni</span> <span class="o">&gt;</span> <span class="mf">180.</span><span class="p">]</span>  <span class="o">-=</span> <span class="mf">360.</span>
+
+            <span class="n">lats</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lati</span><span class="p">)</span>
+            <span class="n">lons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loni</span><span class="p">)</span>
+            <span class="n">incs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">inci</span><span class="p">)</span>
+
+    <span class="c1"># mask out bad pixels</span>
+    <span class="n">masks</span>   <span class="o">=</span> <span class="p">[(</span><span class="n">lats</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">!=-</span><span class="mi">1000</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">lons</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">!=-</span><span class="mi">1000</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">incs</span><span class="p">[</span><span class="n">i</span><span class="p">])</span><span class="o">&lt;</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mf">85.</span><span class="p">))</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">))]</span>
+
+    <span class="k">if</span> <span class="n">extents</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># determine the bounding box if the `extent` variable is not passed</span>
+        <span class="n">latmin</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">([</span><span class="n">lats</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">masks</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">))])</span>
+        <span class="n">latmax</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">([</span><span class="n">lats</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">masks</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">))])</span>
+        <span class="n">lonmin</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">([</span><span class="n">lons</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">masks</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">))])</span>
+        <span class="n">lonmax</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">([</span><span class="n">lons</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">masks</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">))])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">lonmin</span><span class="p">,</span> <span class="n">lonmax</span><span class="p">,</span> <span class="n">latmin</span><span class="p">,</span> <span class="n">latmax</span> <span class="o">=</span> <span class="n">extents</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Extents - lon: </span><span class="si">%.3f</span><span class="s2"> </span><span class="si">%.3f</span><span class="s2">  lat: </span><span class="si">%.3f</span><span class="s2"> </span><span class="si">%.3f</span><span class="s2">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">lonmin</span><span class="p">,</span> <span class="n">lonmax</span><span class="p">,</span> <span class="n">latmin</span><span class="p">,</span> <span class="n">latmax</span><span class="p">))</span>
+    <span class="n">lats</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">lons</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">incs</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># create the uniform grid for mosaicing</span>
+    <span class="n">newlon</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">lonmin</span><span class="p">,</span> <span class="n">lonmax</span><span class="p">,</span> <span class="n">pixres</span><span class="p">)</span>
+    <span class="n">newlat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">latmin</span><span class="p">,</span> <span class="n">latmax</span><span class="p">,</span> <span class="n">pixres</span><span class="p">)</span>
+
+    <span class="c1">#LAT, LON = np.meshgrid(newlat, newlon)</span>
+
+    <span class="n">nlat</span> <span class="o">=</span> <span class="n">newlat</span><span class="o">.</span><span class="n">size</span>
+    <span class="n">nlon</span> <span class="o">=</span> <span class="n">newlon</span><span class="o">.</span><span class="n">size</span> 
+    
+    <span class="c1"># create the arrays to hold the intermediary data</span>
+    <span class="n">IMG</span>   <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nlat</span><span class="p">,</span> <span class="n">nlon</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;float&#39;</span><span class="p">)</span>
+    <span class="n">IMGs</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">),</span> <span class="n">nlat</span><span class="p">,</span> <span class="n">nlon</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+    <span class="n">Ls</span>    <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">),</span> <span class="n">nlat</span><span class="p">,</span> <span class="n">nlon</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;float&#39;</span><span class="p">)</span>
+    <span class="n">INCLs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">),</span> <span class="n">nlat</span><span class="p">,</span> <span class="n">nlon</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;float&#39;</span><span class="p">)</span>
+    <span class="n">EMISs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">),</span> <span class="n">nlat</span><span class="p">,</span> <span class="n">nlon</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;float&#39;</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Mosaic shape: </span><span class="si">%d</span><span class="s2"> x </span><span class="si">%d</span><span class="s2">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">nlon</span><span class="p">,</span> <span class="n">nlat</span><span class="p">))</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">file</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">files</span><span class="p">):</span>
+        <span class="c1"># generate the projection of each image in the mosaic</span>
+        <span class="n">fname</span> <span class="o">=</span> <span class="n">files</span><span class="p">[</span><span class="n">i</span><span class="p">][:</span><span class="o">-</span><span class="mi">3</span><span class="p">]</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">IMGi</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">INCLs</span><span class="p">[</span><span class="n">i</span><span class="p">,:],</span> <span class="n">EMISs</span><span class="p">[</span><span class="n">i</span><span class="p">,:]</span> <span class="o">=</span> <span class="n">map_project</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="n">pixres</span><span class="o">=</span><span class="n">pixres</span><span class="p">,</span> <span class="n">long</span><span class="o">=</span><span class="n">newlon</span><span class="p">,</span> <span class="n">latg</span><span class="o">=</span><span class="n">newlat</span><span class="p">,</span>
+                        <span class="n">save</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">savemask</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">num_procs</span><span class="o">=</span><span class="n">num_procs</span><span class="p">,</span>
+                        <span class="n">scorr_method</span><span class="o">=</span><span class="n">scorr_method</span><span class="p">,</span> <span class="n">load</span><span class="o">=</span><span class="n">load</span><span class="p">,</span> <span class="n">ret_inc</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="n">IMGi</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">IMGi</span><span class="p">)]</span> <span class="o">=</span> <span class="mf">0.</span>
+        <span class="c1"># save the data and also get brightness information</span>
+        <span class="n">IMGs</span><span class="p">[</span><span class="n">i</span><span class="p">,:]</span> <span class="o">=</span> <span class="n">IMGi</span>
+        <span class="n">Ls</span><span class="p">[</span><span class="n">i</span><span class="p">,:]</span>   <span class="o">=</span> <span class="n">color</span><span class="o">.</span><span class="n">rgb2hsv</span><span class="p">(</span><span class="n">IMGi</span><span class="p">)[:,:,</span><span class="mi">2</span><span class="p">]</span>
+
+    <span class="n">combine_method</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;combine_method&#39;</span><span class="p">,</span> <span class="s1">&#39;max&#39;</span><span class="p">)</span>
+
+    <span class="c1"># experimental method (not recommended)</span>
+    <span class="k">if</span> <span class="n">combine_method</span><span class="o">==</span><span class="s1">&#39;min_grad&#39;</span><span class="p">:</span>
+        <span class="n">Lx</span><span class="p">,</span> <span class="n">Ly</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">Ls</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">))</span>
+        <span class="n">Lxx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">Lx</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">Lyy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">Ly</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">delsqL</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">Lx</span> <span class="o">+</span> <span class="n">Ly</span><span class="p">)</span>
+
+    <span class="c1"># get the overlap area, and correct for </span>
+    <span class="c1"># brightness variations between overlap</span>
+    <span class="c1"># regions in different images</span>
+    <span class="n">npix</span>    <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Ls</span><span class="o">&gt;</span><span class="mf">0.005</span><span class="o">*</span><span class="n">Ls</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">overlap_mask</span> <span class="o">=</span> <span class="n">npix</span><span class="o">&gt;</span><span class="mi">1</span>
+
+    <span class="c1"># get the average value of the overlap</span>
+    <span class="c1"># region in each image</span>
+    <span class="n">ave_val</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">)):</span>
+        <span class="n">imgi</span> <span class="o">=</span> <span class="n">Ls</span><span class="p">[</span><span class="n">i</span><span class="p">,:][</span><span class="n">overlap_mask</span><span class="p">]</span>
+        <span class="n">ave_val</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">imgi</span><span class="p">[</span><span class="n">imgi</span><span class="o">&gt;</span><span class="mf">0.</span><span class="p">])</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+
+    <span class="c1"># get the average of the all overlaps</span>
+    <span class="n">ave_all</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">ave_val</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">ave_val</span><span class="p">,</span> <span class="n">ave_all</span><span class="p">)</span>
+
+    <span class="c1"># correct each image so that the overlap </span>
+    <span class="c1"># regions have the same brightness</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">)):</span>
+        <span class="n">IMGs</span><span class="p">[</span><span class="n">i</span><span class="p">,:]</span> <span class="o">*=</span> <span class="n">ave_all</span><span class="o">/</span><span class="n">ave_val</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+    
+    <span class="c1"># clear the memory </span>
+    <span class="k">del</span> <span class="n">overlap_mask</span>
+    <span class="k">del</span> <span class="n">ave_val</span>
+    <span class="k">del</span> <span class="n">npix</span>
+
+
+    <span class="k">if</span> <span class="n">combine_method</span><span class="o">==</span><span class="s1">&#39;max&#39;</span><span class="p">:</span>
+        <span class="n">combine</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span>
+    <span class="k">elif</span> <span class="n">combine_method</span><span class="o">==</span><span class="s1">&#39;min&#39;</span><span class="p">:</span>
+        <span class="n">combine</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span>
+
+    <span class="k">if</span> <span class="s1">&#39;none&#39;</span> <span class="ow">in</span> <span class="n">scorr_method</span><span class="p">:</span>
+        <span class="n">IMG</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">IMGs</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">incem</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># create a dummy lighting geometry variable</span>
+        <span class="n">incem</span> <span class="o">=</span> <span class="n">INCLs</span><span class="o">*</span><span class="n">EMISs</span>
+
+        <span class="c1"># remove regions of low lighting (even after </span>
+        <span class="c1"># lighting correction)</span>
+        <span class="n">incem</span><span class="p">[</span><span class="n">IMGs</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">&lt;</span><span class="mf">0.02</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Mosaicing image&quot;</span><span class="p">)</span>
+        
+        <span class="c1"># loop through every pixel and find the best value to assign to the mosaic</span>
+        <span class="k">for</span> <span class="n">jj</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">IMG</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\r</span><span class="s2">[</span><span class="si">%-20s</span><span class="s2">] </span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2">&quot;</span><span class="o">%</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">jj</span><span class="o">/</span><span class="n">IMG</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">*</span><span class="mf">20.</span><span class="p">)</span><span class="o">*</span><span class="s1">&#39;=&#39;</span><span class="p">,</span> <span class="n">jj</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">IMG</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">IMG</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+                <span class="n">incemij</span> <span class="o">=</span> <span class="n">incem</span><span class="p">[:,</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">]</span>
+                <span class="c1"># the best pixel is one that actually saw that feature, is not too dim, </span>
+                <span class="c1"># and does not have a low incidence angle</span>
+                <span class="n">mask</span> <span class="o">=</span> <span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">incemij</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">Ls</span><span class="p">[:,</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="o">*</span><span class="n">Ls</span><span class="p">[:,</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">())</span><span class="o">&amp;</span>\
+                    <span class="p">(</span><span class="n">INCLs</span><span class="p">[:,</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">]</span><span class="o">&lt;</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mi">80</span><span class="p">))</span>
+                <span class="n">nimgs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">nimgs</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="c1"># set the value of the pixel in the mosaic</span>
+                    <span class="k">if</span> <span class="n">combine_method</span><span class="o">==</span><span class="s1">&#39;min_grad&#39;</span><span class="p">:</span>
+                        <span class="n">IMG</span><span class="p">[</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">,:]</span> <span class="o">=</span> <span class="n">IMGs</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">delsqL</span><span class="p">[</span><span class="n">mask</span><span class="p">,</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">]),</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">,:]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">IMG</span><span class="p">[</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">,:]</span> <span class="o">=</span> <span class="n">combine</span><span class="p">(</span><span class="n">IMGs</span><span class="p">[</span><span class="n">mask</span><span class="p">,</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">,:],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">nimgs</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">IMG</span><span class="p">[</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">,:]</span> <span class="o">=</span> <span class="n">IMGs</span><span class="p">[</span><span class="n">mask</span><span class="p">,</span><span class="n">jj</span><span class="p">,</span><span class="n">ii</span><span class="p">,:]</span>
+
+    <span class="c1"># clean up </span>
+    <span class="k">del</span> <span class="n">INCLs</span>
+    <span class="k">del</span> <span class="n">EMISs</span>
+
+    <span class="c1"># save these parameters to a NetCDF file so that we can plot it later </span>
+    <span class="k">with</span> <span class="n">nc</span><span class="o">.</span><span class="n">Dataset</span><span class="p">(</span><span class="n">NC_FOLDER</span><span class="o">+</span><span class="s1">&#39;multi_proj_raw.nc&#39;</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">xdim</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="n">nlon</span><span class="p">)</span>
+        <span class="n">ydim</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="n">nlat</span><span class="p">)</span>
+        <span class="n">colors</span>   <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;colors&#39;</span><span class="p">,</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">files</span>    <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;file&#39;</span><span class="p">,</span><span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">))</span>
+
+        <span class="c1">##  create the NetCDF variables </span>
+        <span class="n">latVar</span>   <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;lat&#39;</span><span class="p">,</span> <span class="s1">&#39;float64&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;y&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">lonVar</span>   <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;lon&#39;</span><span class="p">,</span> <span class="s1">&#39;float64&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;x&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">imgVar</span>   <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;img&#39;</span><span class="p">,</span> <span class="s1">&#39;float64&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="s1">&#39;colors&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">imgsVar</span>  <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;imgs&#39;</span><span class="p">,</span> <span class="s1">&#39;float32&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;file&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="s1">&#39;colors&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">incem</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">incemVar</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;incem&#39;</span><span class="p">,</span> <span class="s1">&#39;float64&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;file&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">latVar</span><span class="p">[:]</span>  <span class="o">=</span> <span class="n">newlat</span><span class="p">[:]</span>
+        <span class="n">lonVar</span><span class="p">[:]</span>  <span class="o">=</span> <span class="n">newlon</span><span class="p">[:]</span>
+        <span class="n">imgVar</span><span class="p">[:]</span>  <span class="o">=</span> <span class="n">IMG</span><span class="p">[:]</span>
+        <span class="n">imgsVar</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">IMGs</span><span class="p">[:]</span>
+        <span class="k">if</span> <span class="n">incem</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">incemVar</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">incem</span><span class="p">[:]</span>
+    
+    <span class="c1">## normalize the image by the 99% percentile </span>
+    <span class="n">IMG</span> <span class="o">=</span> <span class="n">IMG</span><span class="o">/</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">IMG</span><span class="p">[</span><span class="n">IMG</span><span class="o">&gt;</span><span class="mf">0.</span><span class="p">],</span> <span class="mf">99.</span><span class="p">))</span>
+    <span class="n">IMG</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">IMG</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">1.</span><span class="p">)</span>
+
+    <span class="n">plt</span><span class="o">.</span><span class="n">imsave</span><span class="p">(</span><span class="n">MOS_FOLDER</span><span class="o">+</span><span class="s1">&#39;mosaic_RGB.png&#39;</span><span class="p">,</span> <span class="n">IMG</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="s1">&#39;lower&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">newlon</span><span class="p">,</span> <span class="n">newlat</span><span class="p">,</span> <span class="n">IMG</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="map_project"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.map_project">[docs]</a><span class="k">def</span> <span class="nf">map_project</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="n">long</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">latg</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">pixres</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">num_procs</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> \
+                <span class="n">save</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">savemask</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">scorr_method</span><span class="o">=</span><span class="s1">&#39;simple&#39;</span><span class="p">,</span> <span class="n">load</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">ret_inc</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Interpolate a single file onto a regular lon/lat grid. By default, </span>
+<span class="sd">        the images are created in a grid that is 5 degrees bigger than the</span>
+<span class="sd">        extent of the raw image observed by JunoCam. Then, this is interpolated</span>
+<span class="sd">        to fit the required mesh. This is in an effort to segment the mosaicing</span>
+<span class="sd">        process, where we can generate a set of map-projected images beforehand, </span>
+<span class="sd">        and then do the mosaicing process afterwords, without wasting too much </span>
+<span class="sd">        space with unnecessary data. </span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        newlon : numpy.ndarray</span>
+<span class="sd">            The new regularly intervaled longitude array</span>
+<span class="sd">        newlat : numpy.ndarray</span>
+<span class="sd">            The new regularly intervaled latitude array</span>
+<span class="sd">        file : string</span>
+<span class="sd">            Input netCDF file with the projected data</span>
+<span class="sd">        num_procs : int</span>
+<span class="sd">            Number of threads to use to grid [Default: 1]</span>
+<span class="sd">        save : bool</span>
+<span class="sd">            Use True to save the output grid data into a </span>
+<span class="sd">            netCDF file [Default: False]</span>
+<span class="sd">        savemask : bool</span>
+<span class="sd">            Use True to save the mask data as a PNG file [Default: False]</span>
+<span class="sd">        scorr_method : string</span>
+<span class="sd">            The type of lighting correction to use:</span>
+
+<span class="sd">            - simple : assume Jupiter is a Lambertian surface (works decently well for some images but does not handle terminators well)</span>
+
+<span class="sd">            - poly : fit a 2nd order polynomial in mu and mu0 based on the brightness of the image </span>
+
+<span class="sd">            - fft : do a FFT-based high pass filter to remove low-frequency (large scale) variations in the brightness of the image. Use the colorspace variable to pass the colorspace that is used to get the brightness (e.g., V in HSV space, L in Lab space, etc.)</span>
+
+<span class="sd">            - combination: you can combine several methods together. e.g., &#39;simple+fft&#39; will run both the simple Lambertian and the FFT. (not recommended)</span>
+
+<span class="sd">        load : bool</span>
+<span class="sd">            Set to `True` to load data from files (generated from previous run). </span>
+<span class="sd">            Set to `False` to regenerate the image.</span>
+<span class="sd">        ret_inc : bool</span>
+<span class="sd">            Set to `True` to return the incidence and emission angle data.</span>
+<span class="sd">        **kwargs : arguments to pass to the scorr functions</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="kn">from</span> <span class="nn">scipy.interpolate</span> <span class="kn">import</span> <span class="n">RegularGridInterpolator</span>
+    <span class="k">global</span> <span class="n">shared_LON</span><span class="p">,</span> <span class="n">shared_LAT</span><span class="p">,</span> <span class="n">nlon</span><span class="p">,</span> <span class="n">nlat</span> 
+
+    <span class="n">fname</span>   <span class="o">=</span> <span class="n">file</span><span class="p">[:</span><span class="o">-</span><span class="mi">3</span><span class="p">]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Projecting </span><span class="si">%s</span><span class="s2">&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">MOS_FOLDER</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">MOS_FOLDER</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">MASK_FOLDER</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">MASK_FOLDER</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">NPY_FOLDER</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">NPY_FOLDER</span><span class="p">)</span>
+
+    <span class="c1">## open the file and load the data</span>
+    <span class="n">dataset</span> <span class="o">=</span> <span class="n">nc</span><span class="o">.</span><span class="n">Dataset</span><span class="p">(</span><span class="n">NC_FOLDER</span><span class="o">+</span><span class="n">file</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span>
+    <span class="n">lats</span>   <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;lat&#39;</span><span class="p">][:]</span>
+    <span class="n">lons</span>   <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;lon&#39;</span><span class="p">][:]</span>
+    <span class="n">use_flux</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;use_flux&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">use_flux</span><span class="p">:</span>
+        <span class="n">imgs</span>   <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;flux&#39;</span><span class="p">][:]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Using raw IMG&quot;</span><span class="p">)</span>
+        <span class="n">imgs</span>   <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;img&#39;</span><span class="p">][:]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">scloci</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;scloc&#39;</span><span class="p">][:]</span>
+    <span class="n">eti</span>    <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;et&#39;</span><span class="p">][:]</span>
+    <span class="n">incid</span>   <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;incidence&#39;</span><span class="p">][:]</span>
+    <span class="n">emis</span>   <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;emission&#39;</span><span class="p">][:]</span>
+
+    <span class="c1"># rotate the lon grid if needed</span>
+    <span class="n">lon_rot</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;lon_rot&#39;</span><span class="p">,</span> <span class="mf">0.</span><span class="p">)</span>
+    <span class="n">lons</span><span class="p">[</span><span class="n">lons</span><span class="o">!=-</span><span class="mi">1000</span><span class="p">]</span> <span class="o">+=</span> <span class="n">lon_rot</span>
+    <span class="n">lons</span><span class="p">[(</span><span class="n">lons</span> <span class="o">&lt;</span> <span class="o">-</span><span class="mf">180.</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">lons</span><span class="o">!=-</span><span class="mi">1000</span><span class="p">)]</span> <span class="o">+=</span> <span class="mf">360.</span>
+    <span class="n">lons</span><span class="p">[</span><span class="n">lons</span> <span class="o">&gt;</span> <span class="mf">180.</span><span class="p">]</span>  <span class="o">-=</span> <span class="mf">360.</span>
+
+    <span class="n">nframes</span> <span class="o">=</span> <span class="n">eti</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">pixres</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="n">masks</span>   <span class="o">=</span> <span class="p">(</span><span class="n">lats</span><span class="o">!=-</span><span class="mi">1000</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">lons</span><span class="o">!=-</span><span class="mi">1000</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">incid</span><span class="p">)</span><span class="o">&lt;</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mf">89.</span><span class="p">))</span>
+        <span class="n">latmin</span> <span class="o">=</span> <span class="n">lats</span><span class="p">[</span><span class="n">masks</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+        <span class="n">latmax</span> <span class="o">=</span> <span class="n">lats</span><span class="p">[</span><span class="n">masks</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="n">lonmin</span> <span class="o">=</span> <span class="n">lons</span><span class="p">[</span><span class="n">masks</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+        <span class="n">lonmax</span> <span class="o">=</span> <span class="n">lons</span><span class="p">[</span><span class="n">masks</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+
+        <span class="n">newlon</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">lonmin</span><span class="p">,</span> <span class="n">lonmax</span><span class="p">,</span> <span class="n">pixres</span><span class="p">)</span>
+        <span class="n">newlat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">latmin</span><span class="p">,</span> <span class="n">latmax</span><span class="p">,</span> <span class="n">pixres</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Limits: lon: </span><span class="si">%.3f</span><span class="s2"> </span><span class="si">%.3f</span><span class="s2">  lat: </span><span class="si">%.3f</span><span class="s2"> </span><span class="si">%.3f</span><span class="s2">  size: </span><span class="si">%d</span><span class="s2"> x </span><span class="si">%d</span><span class="s2">&quot;</span><span class="o">%</span><span class="p">(</span>\
+                <span class="n">newlon</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">newlon</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="n">newlat</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">newlat</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="n">newlon</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">newlat</span><span class="o">.</span><span class="n">size</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Please provide a resolution&quot;</span><span class="p">)</span>
+
+    <span class="c1">## define the arrays to hold the new gridded data</span>
+    <span class="n">nlat</span> <span class="o">=</span> <span class="n">newlat</span><span class="o">.</span><span class="n">size</span>
+    <span class="n">nlon</span> <span class="o">=</span> <span class="n">newlon</span><span class="o">.</span><span class="n">size</span>
+    <span class="n">IMG</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nlat</span><span class="p">,</span> <span class="n">nlon</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">LAT</span><span class="p">,</span> <span class="n">LON</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">newlat</span><span class="p">,</span> <span class="n">newlon</span><span class="p">)</span>
+
+    <span class="c1">## get the image mask where no data exists</span>
+    <span class="c1">## this is created to remove errors from interpolation</span>
+    <span class="k">if</span> <span class="n">load</span><span class="o">&amp;</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">NPY_FOLDER</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_mask.npy&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Loading mask file&quot;</span><span class="p">)</span>
+        <span class="n">maski</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">NPY_FOLDER</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_mask.npy&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">roll_lon</span> <span class="o">=</span> <span class="n">newlon</span> <span class="o">-</span> <span class="n">lon_rot</span>
+        <span class="n">roll_lon</span><span class="p">[</span><span class="n">roll_lon</span> <span class="o">&lt;</span> <span class="o">-</span><span class="mf">180.</span><span class="p">]</span> <span class="o">+=</span> <span class="mf">360.</span>
+        <span class="n">roll_lon</span><span class="p">[</span><span class="n">roll_lon</span> <span class="o">&gt;</span>  <span class="mf">180.</span><span class="p">]</span> <span class="o">-=</span> <span class="mf">360.</span>
+        <span class="n">output</span> <span class="o">=</span> <span class="n">image_mask_c</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">newlat</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">roll_lon</span><span class="p">),</span> <span class="n">nlat</span><span class="p">,</span> <span class="n">nlon</span><span class="p">,</span> \
+                           <span class="n">eti</span><span class="p">,</span> <span class="n">nframes</span><span class="p">)</span>
+        <span class="n">maski</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">POINTER</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="o">*</span><span class="p">(</span><span class="n">nlat</span><span class="o">*</span><span class="n">nlon</span><span class="p">)))</span><span class="o">.</span><span class="n">contents</span>
+        <span class="n">maski</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">maski</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">nlat</span><span class="p">,</span> <span class="n">nlon</span><span class="p">))</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">NPY_FOLDER</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_mask.npy&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">,</span> <span class="n">maski</span><span class="p">)</span>
+    
+    <span class="c1">## save the mask and the raw pixel values if needed</span>
+    <span class="k">if</span><span class="p">(</span><span class="n">savemask</span><span class="p">):</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">imsave</span><span class="p">(</span><span class="n">MASK_FOLDER</span><span class="o">+</span><span class="s1">&#39;mask_</span><span class="si">%s</span><span class="s1">.png&#39;</span><span class="o">%</span><span class="p">(</span><span class="n">fname</span><span class="p">),</span> <span class="n">maski</span><span class="p">,</span> <span class="n">vmin</span><span class="o">=</span><span class="mf">0.</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="mf">1.</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;gray&#39;</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="s1">&#39;lower&#39;</span><span class="p">)</span>
+
+    <span class="c1"># loop through each color and create that color band in the projection</span>
+    <span class="k">for</span> <span class="n">ci</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Processing </span><span class="si">%s</span><span class="s2">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">FILTERS</span><span class="p">[</span><span class="n">ci</span><span class="p">]))</span>
+        <span class="n">filteriname</span> <span class="o">=</span> <span class="n">NPY_FOLDER</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_</span><span class="si">%s</span><span class="s2">.npy&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">FILTERS</span><span class="p">[</span><span class="n">ci</span><span class="p">])</span>
+        <span class="c1"># load the image if needed</span>
+        <span class="k">if</span> <span class="n">load</span><span class="o">&amp;</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">filteriname</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Loading from </span><span class="si">%s</span><span class="s2">&quot;</span><span class="o">%</span><span class="n">filteriname</span><span class="p">)</span>
+            <span class="n">IMGI</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">filteriname</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1">## create a shared memory object for LON/LAT</span>
+            <span class="n">LON_ctypes</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ctypeslib</span><span class="o">.</span><span class="n">as_ctypes</span><span class="p">(</span><span class="n">LON</span><span class="p">)</span>
+            <span class="n">shared_LON</span> <span class="o">=</span> <span class="n">sct</span><span class="o">.</span><span class="n">RawArray</span><span class="p">(</span><span class="n">LON_ctypes</span><span class="o">.</span><span class="n">_type_</span><span class="p">,</span> <span class="n">LON_ctypes</span><span class="p">)</span>
+            <span class="n">LAT_ctypes</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ctypeslib</span><span class="o">.</span><span class="n">as_ctypes</span><span class="p">(</span><span class="n">LAT</span><span class="p">)</span>
+            <span class="n">shared_LAT</span> <span class="o">=</span> <span class="n">sct</span><span class="o">.</span><span class="n">RawArray</span><span class="p">(</span><span class="n">LAT_ctypes</span><span class="o">.</span><span class="n">_type_</span><span class="p">,</span> <span class="n">LAT_ctypes</span><span class="p">)</span>
+
+            <span class="n">lati</span> <span class="o">=</span> <span class="n">lats</span><span class="p">[:,</span><span class="n">ci</span><span class="p">,:,:]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+            <span class="n">loni</span> <span class="o">=</span> <span class="n">lons</span><span class="p">[:,</span><span class="n">ci</span><span class="p">,:,:]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+            <span class="n">imgi</span> <span class="o">=</span> <span class="n">imgs</span><span class="p">[:,</span><span class="n">ci</span><span class="p">,:,:]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+            <span class="n">emi</span>  <span class="o">=</span> <span class="n">emis</span><span class="p">[:,</span><span class="n">ci</span><span class="p">,:,:]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+            <span class="n">inci</span> <span class="o">=</span> <span class="n">incid</span><span class="p">[:,</span><span class="n">ci</span><span class="p">,:,:]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+
+            <span class="n">invmask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">((</span><span class="n">lati</span><span class="o">==-</span><span class="mf">1000.</span><span class="p">)</span><span class="o">|</span><span class="p">(</span><span class="n">loni</span><span class="o">==-</span><span class="mf">1000.</span><span class="p">)</span><span class="o">|</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">inci</span><span class="p">)</span><span class="o">&gt;</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mf">85.</span><span class="p">)))[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="c1">## remove pixels that were not projected</span>
+            <span class="n">lat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">lati</span><span class="p">,</span> <span class="n">invmask</span><span class="p">)</span>
+            <span class="n">lon</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">loni</span><span class="p">,</span> <span class="n">invmask</span><span class="p">)</span>
+            <span class="n">img</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">imgi</span><span class="p">,</span> <span class="n">invmask</span><span class="p">)</span>
+            
+            <span class="c1">## do the gridding</span>
+            <span class="n">IMGI</span> <span class="o">=</span> <span class="n">project_to_uniform_grid</span><span class="p">(</span><span class="n">lon</span><span class="p">,</span> <span class="n">lat</span><span class="p">,</span> <span class="n">img</span><span class="p">,</span> <span class="n">num_procs</span><span class="p">)</span>
+            
+            <span class="c1">## remove interpolation errors</span>
+            <span class="n">IMGI</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">IMGI</span><span class="p">)]</span>  <span class="o">=</span> <span class="mf">0.</span>
+            <span class="n">IMGI</span><span class="p">[</span><span class="n">IMGI</span><span class="o">&lt;</span><span class="mf">0.</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.</span>
+
+            <span class="c1">## Save the data out to a numpy file</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">filteriname</span><span class="p">,</span> <span class="n">IMGI</span><span class="p">)</span>
+        <span class="n">maski</span><span class="p">[</span><span class="n">IMGI</span><span class="o">&lt;</span><span class="mf">0.001</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">IMG</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">]</span>  <span class="o">=</span> <span class="n">IMGI</span>
+
+    <span class="n">INCL</span><span class="p">,</span> <span class="n">EMIS</span> <span class="o">=</span> <span class="n">get_emis_incid_map</span><span class="p">(</span><span class="n">incid</span><span class="p">,</span> <span class="n">emis</span><span class="p">,</span> <span class="n">lats</span><span class="p">,</span> <span class="n">lons</span><span class="p">,</span> \
+                                   <span class="n">newlat</span><span class="p">,</span> <span class="n">newlon</span><span class="p">,</span> <span class="n">maski</span><span class="p">,</span> <span class="n">fname</span><span class="p">,</span> \
+                                   <span class="n">num_procs</span><span class="o">=</span><span class="n">num_procs</span><span class="p">,</span>\
+                                   <span class="n">load</span><span class="o">=</span><span class="n">load</span><span class="p">)</span>
+    <span class="n">maski</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">maski</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">ci</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+        <span class="n">IMG</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">]</span> <span class="o">=</span> <span class="n">maski</span><span class="o">*</span><span class="n">IMG</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">]</span>
+
+    <span class="c1">## switch from BGR to RGB</span>
+    <span class="n">IMG</span> <span class="o">=</span> <span class="n">IMG</span><span class="p">[:,:,::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    
+    <span class="c1">## Do a simple Lambertian correction if needed</span>
+    <span class="k">if</span> <span class="s1">&#39;simple&#39;</span> <span class="ow">in</span> <span class="n">scorr_method</span><span class="p">:</span>
+        <span class="n">mu0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">INCL</span><span class="p">),</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">mu0</span><span class="p">[</span><span class="n">mu0</span><span class="o">&lt;</span><span class="mf">0.01</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="n">scorr</span> <span class="o">=</span> <span class="n">mu0</span><span class="c1">#2.*mu0/(mu0 + mu)</span>
+        <span class="k">for</span> <span class="n">ci</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+            <span class="n">IMG</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">]</span> <span class="o">=</span> <span class="n">IMG</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">]</span><span class="o">/</span><span class="n">scorr</span>
+
+
+    <span class="k">if</span> <span class="s1">&#39;poly&#39;</span> <span class="ow">in</span> <span class="n">scorr_method</span><span class="p">:</span>
+        <span class="n">IMG</span> <span class="o">=</span> <span class="n">scorr_poly</span><span class="p">(</span><span class="n">INCL</span><span class="p">,</span> <span class="n">EMIS</span><span class="p">,</span> <span class="n">newlat</span><span class="p">,</span> <span class="n">newlon</span><span class="p">,</span> <span class="n">IMG</span><span class="p">)</span>
+
+    <span class="c1"># with both the poly and simple corrections,</span>
+    <span class="c1"># bad incidence values are treated as NaNs. </span>
+    <span class="c1"># remove those pixels here</span>
+    <span class="n">IMG</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">IMG</span><span class="p">)]</span> <span class="o">=</span> <span class="mf">0.</span>
+
+    <span class="k">if</span> <span class="s1">&#39;fft&#39;</span> <span class="ow">in</span> <span class="n">scorr_method</span><span class="p">:</span>
+        <span class="c1"># do an FFT correction if needed</span>
+        <span class="n">IMG</span> <span class="o">=</span> <span class="n">scorr_fft</span><span class="p">(</span><span class="n">IMG</span><span class="p">,</span> <span class="n">fname</span><span class="p">,</span> \
+                        <span class="n">radius</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;fft_radius&#39;</span><span class="p">,</span> <span class="mf">5.</span><span class="p">),</span> \
+                        <span class="n">colorspace</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;colorspace&#39;</span><span class="p">,</span> <span class="s1">&#39;hsv&#39;</span><span class="p">),</span> \
+                        <span class="n">trim_rad</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;trim_rad&#39;</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">),</span> 
+                        <span class="n">trim_threshold</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;trim_thresh&#39;</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">))</span>
+        
+
+    <span class="c1">## expand the image out to the required grid</span>
+    <span class="n">interp_loaded_grid</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;interp_loaded_grid&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">interp_loaded_grid</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="p">(</span><span class="n">latg</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">long</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">),</span> <span class="s2">&quot;Please provide the grid lat/lon&quot;</span>
+        <span class="n">IMGnew</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">latg</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">long</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">LATG</span><span class="p">,</span> <span class="n">LONG</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">latg</span><span class="p">,</span> <span class="n">long</span><span class="p">)</span>
+        <span class="n">newpoints</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">((</span><span class="n">LATG</span><span class="o">.</span><span class="n">flatten</span><span class="p">(),</span> <span class="n">LONG</span><span class="o">.</span><span class="n">flatten</span><span class="p">()),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;interpolating from </span><span class="si">%d</span><span class="s2"> x </span><span class="si">%d</span><span class="s2"> =&gt; </span><span class="si">%d</span><span class="s2"> x </span><span class="si">%d</span><span class="s2">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">nlat</span><span class="p">,</span> <span class="n">nlon</span><span class="p">,</span> <span class="n">latg</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">long</span><span class="o">.</span><span class="n">size</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">ci</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+            <span class="n">interp_function</span> <span class="o">=</span> <span class="n">RegularGridInterpolator</span><span class="p">((</span><span class="n">newlat</span><span class="p">,</span> <span class="n">newlon</span><span class="p">),</span> <span class="n">IMG</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">],</span> <span class="n">bounds_error</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fill_value</span><span class="o">=</span><span class="mf">0.</span><span class="p">)</span>
+            <span class="n">IMGnew</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">]</span> <span class="o">=</span> <span class="n">interp_function</span><span class="p">(</span><span class="n">newpoints</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">long</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">latg</span><span class="o">.</span><span class="n">size</span><span class="p">))</span><span class="o">.</span><span class="n">T</span>
+
+        <span class="c1"># remove interpolation errors where one color has dark data but the</span>
+        <span class="c1"># other don&#39;t. these needs to be large enough to ignore dark areas,</span>
+        <span class="c1"># but small enough that we don&#39;t miss color features (such as GRS)</span>
+        <span class="n">IMGnew</span> <span class="o">=</span> <span class="n">IMGnew</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">long</span><span class="o">.</span><span class="n">size</span><span class="o">*</span><span class="n">latg</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">IMGnew</span><span class="p">[</span><span class="n">IMGnew</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">&lt;</span><span class="mf">0.1</span><span class="p">,:]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">IMG</span> <span class="o">=</span> <span class="n">IMGnew</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">latg</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">long</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        
+
+        <span class="c1"># interpolate the other variables</span>
+        <span class="n">interp_function</span> <span class="o">=</span> <span class="n">RegularGridInterpolator</span><span class="p">((</span><span class="n">newlat</span><span class="p">,</span> <span class="n">newlon</span><span class="p">),</span> <span class="n">INCL</span><span class="p">,</span> <span class="n">bounds_error</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fill_value</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+        <span class="n">INCL</span> <span class="o">=</span> <span class="n">interp_function</span><span class="p">(</span><span class="n">newpoints</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">long</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">latg</span><span class="o">.</span><span class="n">size</span><span class="p">))</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">interp_function</span> <span class="o">=</span> <span class="n">RegularGridInterpolator</span><span class="p">((</span><span class="n">newlat</span><span class="p">,</span> <span class="n">newlon</span><span class="p">),</span> <span class="n">EMIS</span><span class="p">,</span> <span class="n">bounds_error</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fill_value</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+        <span class="n">EMIS</span> <span class="o">=</span> <span class="n">interp_function</span><span class="p">(</span><span class="n">newpoints</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">long</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">latg</span><span class="o">.</span><span class="n">size</span><span class="p">))</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">interp_function</span> <span class="o">=</span> <span class="n">RegularGridInterpolator</span><span class="p">((</span><span class="n">newlat</span><span class="p">,</span> <span class="n">newlon</span><span class="p">),</span> <span class="n">maski</span><span class="p">,</span> <span class="n">bounds_error</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fill_value</span><span class="o">=</span><span class="mf">0.</span><span class="p">)</span>
+        <span class="n">maski</span> <span class="o">=</span> <span class="n">interp_function</span><span class="p">(</span><span class="n">newpoints</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">long</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">latg</span><span class="o">.</span><span class="n">size</span><span class="p">))</span><span class="o">.</span><span class="n">T</span>
+
+        <span class="c1"># update the lat/lon info for output</span>
+        <span class="n">newlat</span> <span class="o">=</span> <span class="n">latg</span>
+        <span class="n">newlon</span> <span class="o">=</span> <span class="n">long</span>
+        <span class="n">nlon</span>   <span class="o">=</span> <span class="n">long</span><span class="o">.</span><span class="n">size</span>
+        <span class="n">nlat</span>   <span class="o">=</span> <span class="n">latg</span><span class="o">.</span><span class="n">size</span>
+
+    <span class="n">IMGc</span> <span class="o">=</span> <span class="n">IMG</span><span class="o">/</span><span class="n">IMG</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+    <span class="n">IMGc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">IMGc</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">1.</span><span class="p">)</span><span class="c1">#IMG/np.percentile(IMG, 99)</span>
+
+    <span class="k">if</span><span class="p">(</span><span class="n">save</span><span class="p">):</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">imsave</span><span class="p">(</span><span class="n">MOS_FOLDER</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_mosaic.png&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">fname</span><span class="p">),</span> <span class="n">IMGc</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="s1">&#39;lower&#39;</span><span class="p">)</span>
+
+    <span class="c1">## save these parameters to a NetCDF file so that we can plot it later</span>
+    <span class="k">with</span> <span class="n">nc</span><span class="o">.</span><span class="n">Dataset</span><span class="p">(</span><span class="n">NC_FOLDER</span><span class="o">+</span><span class="s1">&#39;</span><span class="si">%s</span><span class="s1">_proj.nc&#39;</span><span class="o">%</span><span class="n">fname</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">xdim</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="n">nlon</span><span class="p">)</span>
+        <span class="n">ydim</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="n">nlat</span><span class="p">)</span>
+        <span class="n">colors</span>   <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;colors&#39;</span><span class="p">,</span><span class="mi">3</span><span class="p">)</span>
+
+        <span class="c1">## create the NetCDF variables</span>
+        <span class="n">latVar</span>  <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;lat&#39;</span><span class="p">,</span> <span class="s1">&#39;float32&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;y&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">lonVar</span>  <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;lon&#39;</span><span class="p">,</span> <span class="s1">&#39;float32&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;x&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">lonVar</span><span class="o">.</span><span class="n">units</span> <span class="o">=</span> <span class="s2">&quot;degrees east&quot;</span>
+        <span class="n">latVar</span><span class="o">.</span><span class="n">units</span> <span class="o">=</span> <span class="s2">&quot;degrees north&quot;</span>
+
+        <span class="n">imgVar</span>  <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;img&#39;</span><span class="p">,</span> <span class="s1">&#39;float64&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="s1">&#39;colors&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        
+        <span class="n">img_corrVar</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;img_corr&#39;</span><span class="p">,</span> <span class="s1">&#39;uint8&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="s1">&#39;colors&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">latVar</span><span class="p">[:]</span>  <span class="o">=</span> <span class="n">newlat</span><span class="p">[:]</span>
+        <span class="n">lonVar</span><span class="p">[:]</span>  <span class="o">=</span> <span class="n">newlon</span><span class="p">[:]</span>
+        <span class="n">imgVar</span><span class="p">[:]</span>  <span class="o">=</span> <span class="n">IMG</span><span class="p">[:]</span>
+        <span class="n">img_corrVar</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">IMGc</span><span class="o">*</span><span class="mi">255</span><span class="o">/</span><span class="n">IMG</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">ret_inc</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_proj.nc&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">,</span> <span class="n">IMG</span><span class="p">,</span> <span class="n">maski</span><span class="p">,</span> <span class="n">INCL</span><span class="p">,</span> <span class="n">EMIS</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_proj.nc&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">,</span> <span class="n">IMG</span><span class="p">,</span> <span class="n">maski</span></div>
+
+
+<div class="viewcode-block" id="project_to_uniform_grid"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.project_to_uniform_grid">[docs]</a><span class="k">def</span> <span class="nf">project_to_uniform_grid</span><span class="p">(</span><span class="n">lon</span><span class="p">,</span> <span class="n">lat</span><span class="p">,</span> <span class="n">img</span><span class="p">,</span> <span class="n">num_procs</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Main driver for the regridding. Handles the multiprocessing</span>
+<span class="sd">        part of the process.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        lon : numpy.ndarray</span>
+<span class="sd">            Original unstructured longitude data</span>
+<span class="sd">        lat : numpy.ndarray</span>
+<span class="sd">            Original unstructured latitude data</span>
+<span class="sd">        img : numpy.ndarray</span>
+<span class="sd">            Unstructured image data corresponding to that lon/lat</span>
+<span class="sd">        num_procs : int</span>
+<span class="sd">            number of threads to create to grid the data</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        IMG : numpy.ndarray</span>
+<span class="sd">            Data interpolated onto a regular grid</span>
+
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">global</span> <span class="n">shared_img</span><span class="p">,</span> <span class="n">shared_lon</span><span class="p">,</span> <span class="n">shared_lat</span><span class="p">,</span> <span class="n">shared_LON</span><span class="p">,</span> <span class="n">shared_LAT</span><span class="p">,</span> <span class="n">shared_IMG</span><span class="p">,</span>\
+         <span class="n">nlon</span><span class="p">,</span> <span class="n">nlat</span>
+    <span class="n">nsquare_lon</span>     <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">nlon</span><span class="o">/</span><span class="n">NLON_SLICE</span><span class="p">))</span>
+    <span class="n">nsquare_lat</span>     <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">nlat</span><span class="o">/</span><span class="n">NLAT_SLICE</span><span class="p">))</span>
+
+    <span class="c1">## conver the data arrays into shared memory</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    lon_ctypes = np.ctypeslib.as_ctypes(lon)</span>
+<span class="sd">    shared_lon = sct.RawArray(lon_ctypes._type_, lon_ctypes)</span>
+<span class="sd">    lat_ctypes = np.ctypeslib.as_ctypes(lat)</span>
+<span class="sd">    shared_lat = sct.RawArray(lat_ctypes._type_, lat_ctypes)</span>
+<span class="sd">    img_ctypes = np.ctypeslib.as_ctypes(img)</span>
+<span class="sd">    shared_img = sct.RawArray(img_ctypes._type_, img_ctypes)</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">inpargs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">indices</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="c1">## convert back to a numpy array to process</span>
+    <span class="n">LON</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">shared_LON</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">nlon</span><span class="p">,</span><span class="n">nlat</span><span class="p">)</span>
+    <span class="n">LAT</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">shared_LAT</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">nlon</span><span class="p">,</span><span class="n">nlat</span><span class="p">)</span>
+
+    <span class="c1">## get the pixel resolution in deg/pixel </span>
+    <span class="c1">## used as a search radius to get the points within the</span>
+    <span class="c1">## domain bounds</span>
+    <span class="n">pixres</span><span class="o">=</span> <span class="n">LON</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">LON</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="c1">## build the inputs to the multiprocessing pipeline</span>
+    <span class="c1">## this will decompose the longitude grid into NLON_SLICE</span>
+    <span class="c1">## and the latitude grid into NLAT_SLICEs</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">NLAT_SLICE</span><span class="p">):</span>
+        <span class="n">startyind</span> <span class="o">=</span> <span class="n">j</span><span class="o">*</span><span class="n">nsquare_lat</span>
+        <span class="n">endyind</span>   <span class="o">=</span> <span class="nb">min</span><span class="p">([</span><span class="n">nlat</span><span class="p">,</span> <span class="p">(</span><span class="n">j</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">nsquare_lat</span><span class="p">])</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\r</span><span class="s2"> </span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">NLAT_SLICE</span><span class="p">),</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">NLON_SLICE</span><span class="p">):</span>
+            <span class="n">startxind</span> <span class="o">=</span> <span class="n">i</span><span class="o">*</span><span class="n">nsquare_lon</span>
+            <span class="n">endxind</span>   <span class="o">=</span> <span class="nb">min</span><span class="p">([</span><span class="n">nlon</span><span class="p">,</span> <span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">nsquare_lon</span><span class="p">])</span>
+            <span class="n">LONi</span> <span class="o">=</span> <span class="n">LON</span><span class="p">[</span><span class="n">startxind</span><span class="p">:</span><span class="n">endxind</span><span class="p">,</span><span class="n">startyind</span><span class="p">:</span><span class="n">endyind</span><span class="p">]</span>
+            <span class="n">LATi</span> <span class="o">=</span> <span class="n">LAT</span><span class="p">[</span><span class="n">startxind</span><span class="p">:</span><span class="n">endxind</span><span class="p">,</span><span class="n">startyind</span><span class="p">:</span><span class="n">endyind</span><span class="p">]</span>
+            
+            <span class="n">lonmin</span>   <span class="o">=</span> <span class="n">LONi</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+            <span class="n">lonmax</span>   <span class="o">=</span> <span class="n">LONi</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+            <span class="n">latmin</span>   <span class="o">=</span> <span class="n">LATi</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+            <span class="n">latmax</span>   <span class="o">=</span> <span class="n">LATi</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+
+            <span class="n">maski</span>    <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">((</span><span class="n">lon</span><span class="o">&gt;</span><span class="n">lonmin</span><span class="o">-</span><span class="mi">50</span><span class="o">*</span><span class="n">pixres</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">lon</span><span class="o">&lt;</span><span class="n">lonmax</span><span class="o">+</span><span class="mi">50</span><span class="o">*</span><span class="n">pixres</span><span class="p">)</span><span class="o">&amp;</span>\
+                                <span class="p">(</span><span class="n">lat</span><span class="o">&gt;</span><span class="n">latmin</span><span class="o">-</span><span class="mi">50</span><span class="o">*</span><span class="n">pixres</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">lat</span><span class="o">&lt;</span><span class="n">latmax</span><span class="o">+</span><span class="mi">50</span><span class="o">*</span><span class="n">pixres</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="c1">## make sure there is enough data to grid </span>
+            <span class="k">if</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">maski</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">3</span><span class="p">):</span>
+                <span class="c1">#inpargs.append([startxind,endxind,startyind,endyind, maski])</span>
+                <span class="n">inpargs</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">startxind</span><span class="p">,</span><span class="n">endxind</span><span class="p">,</span><span class="n">startyind</span><span class="p">,</span><span class="n">endyind</span><span class="p">,</span><span class="n">lon</span><span class="p">[</span><span class="n">maski</span><span class="p">],</span><span class="n">lat</span><span class="p">[</span><span class="n">maski</span><span class="p">],</span><span class="n">img</span><span class="p">[</span><span class="n">maski</span><span class="p">]])</span>
+    <span class="nb">print</span><span class="p">()</span>
+    <span class="c1">## create the final image array</span>
+    <span class="c1">## this will be stored as a shared array so each process </span>
+    <span class="c1">## can write to it</span>
+    <span class="n">cdtype</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ctypeslib</span><span class="o">.</span><span class="n">as_ctypes_type</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">(</span><span class="nb">float</span><span class="p">))</span>
+    <span class="n">shared_IMG</span> <span class="o">=</span> <span class="n">multiprocessing</span><span class="o">.</span><span class="n">RawArray</span><span class="p">(</span><span class="n">cdtype</span><span class="p">,</span> <span class="n">nlat</span><span class="o">*</span><span class="n">nlon</span><span class="p">)</span>
+
+    <span class="c1">## start the pool</span>
+    <span class="n">pool</span> <span class="o">=</span> <span class="n">multiprocessing</span><span class="o">.</span><span class="n">Pool</span><span class="p">(</span><span class="n">processes</span><span class="o">=</span><span class="n">num_procs</span><span class="p">,</span> <span class="n">initializer</span><span class="o">=</span><span class="n">initializer</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1">## start the multicore grid processing</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">pool</span><span class="o">.</span><span class="n">map_async</span><span class="p">(</span><span class="n">project_part_image</span><span class="p">,</span> <span class="n">inpargs</span><span class="p">)</span>
+        <span class="n">pool</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="n">tasks</span> <span class="o">=</span> <span class="n">pool</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">r</span><span class="o">.</span><span class="n">_job</span><span class="p">]</span>
+        <span class="n">ninpt</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">inpargs</span><span class="p">)</span>
+        <span class="k">while</span> <span class="n">tasks</span><span class="o">.</span><span class="n">_number_left</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">progress</span> <span class="o">=</span> <span class="p">(</span><span class="n">ninpt</span> <span class="o">-</span> <span class="n">tasks</span><span class="o">.</span><span class="n">_number_left</span><span class="o">*</span><span class="n">tasks</span><span class="o">.</span><span class="n">_chunksize</span><span class="p">)</span><span class="o">/</span><span class="n">ninpt</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;NO_VERBOSE&#39;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\r</span><span class="s2">[</span><span class="si">%-20s</span><span class="s2">] </span><span class="si">%.2f%%</span><span class="s2">&quot;</span><span class="o">%</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">progress</span><span class="o">*</span><span class="mi">20</span><span class="p">)</span><span class="o">*</span><span class="s1">&#39;=&#39;</span><span class="p">,</span> <span class="n">progress</span><span class="o">*</span><span class="mf">100.</span><span class="p">),</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">pool</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+        <span class="n">pool</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="k">raise</span> <span class="n">e</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">()</span>
+    
+    <span class="nb">print</span><span class="p">()</span>
+    <span class="n">pool</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">frombuffer</span><span class="p">(</span><span class="n">shared_IMG</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">nlat</span><span class="p">,</span><span class="n">nlon</span><span class="p">))</span> <span class="c1">#np.ctypeslib.as_array(IMG_ctypes)</span></div>
+
+<div class="viewcode-block" id="project_part_image"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.project_part_image">[docs]</a><span class="k">def</span> <span class="nf">project_part_image</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;linear&#39;</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Main gridding code. Interpolates the unstructured data onto</span>
+<span class="sd">        a regular grid</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        inp : tuple</span>
+<span class="sd">            Contains startxind, endxind, startyind, endyind and mask</span>
+<span class="sd">            The indices define the slice of the new image array that will be</span>
+<span class="sd">            processed here while mask is the index of the original unstructured</span>
+<span class="sd">            coordinates that are within this domain. </span>
+<span class="sd">        </span>
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        imgi : numpy.ndarray</span>
+<span class="sd">            The interpolated array on a regular grid corresponding to </span>
+<span class="sd">            [startyind:endyind,startxind:endxind] of the full image</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">global</span> <span class="n">shared_lon</span><span class="p">,</span> <span class="n">shared_lat</span><span class="p">,</span> <span class="n">shared_img</span><span class="p">,</span> <span class="n">shared_LON</span><span class="p">,</span> <span class="n">shared_LAT</span><span class="p">,</span> <span class="n">shared_IMG</span><span class="p">,</span> \
+        <span class="n">nlon</span><span class="p">,</span> <span class="n">nlat</span>
+    
+    <span class="c1">#startxind,endxind,startyind,endyind, maski = inp</span>
+    <span class="n">startxind</span><span class="p">,</span><span class="n">endxind</span><span class="p">,</span><span class="n">startyind</span><span class="p">,</span><span class="n">endyind</span><span class="p">,</span><span class="n">lon</span><span class="p">,</span><span class="n">lat</span><span class="p">,</span><span class="n">img</span> <span class="o">=</span> <span class="n">inp</span>
+    
+    <span class="c1">#lon = np.asarray(shared_lon, dtype=np.float32)[maski]</span>
+    <span class="c1">#lat = np.asarray(shared_lat, dtype=np.float32)[maski]</span>
+    <span class="c1">#img = np.asarray(shared_img, dtype=np.float64)[maski]</span>
+    <span class="n">LON</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">shared_LON</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span>\
+        <span class="n">reshape</span><span class="p">(</span><span class="n">nlon</span><span class="p">,</span><span class="n">nlat</span><span class="p">)[</span><span class="n">startxind</span><span class="p">:</span><span class="n">endxind</span><span class="p">,</span><span class="n">startyind</span><span class="p">:</span><span class="n">endyind</span><span class="p">]</span>
+    <span class="n">LAT</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">shared_LAT</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span>\
+        <span class="n">reshape</span><span class="p">(</span><span class="n">nlon</span><span class="p">,</span><span class="n">nlat</span><span class="p">)[</span><span class="n">startxind</span><span class="p">:</span><span class="n">endxind</span><span class="p">,</span><span class="n">startyind</span><span class="p">:</span><span class="n">endyind</span><span class="p">]</span>
+
+    <span class="n">IMG</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">frombuffer</span><span class="p">(</span><span class="n">shared_IMG</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">nlat</span><span class="p">,</span> <span class="n">nlon</span><span class="p">))</span><span class="c1">#np.ctypeslib.as_array(shared_IMG)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">imgi</span> <span class="o">=</span>  <span class="n">griddata</span><span class="p">((</span><span class="n">lon</span><span class="p">,</span> <span class="n">lat</span><span class="p">),</span> \
+                         <span class="n">img</span><span class="p">,</span> <span class="p">(</span><span class="n">LON</span><span class="p">,</span> <span class="n">LAT</span><span class="p">),</span> <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">IMG</span><span class="p">[</span><span class="n">startyind</span><span class="p">:</span><span class="n">endyind</span><span class="p">,</span><span class="n">startxind</span><span class="p">:</span><span class="n">endxind</span><span class="p">]</span> <span class="o">=</span> <span class="n">imgi</span>
+        <span class="c1">#return (startxind, endxind, startyind, endyind, imgi)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">e</span></div>
+
+<div class="viewcode-block" id="color_correction"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.color_correction">[docs]</a><span class="k">def</span> <span class="nf">color_correction</span><span class="p">(</span><span class="n">datafile</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">hist_eq</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fname</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">save</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> \
+                     <span class="n">trim_saturated</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">sat_threshold</span><span class="o">=</span><span class="mi">95</span><span class="p">,</span> <span class="n">clip_limit</span><span class="o">=</span><span class="mf">0.008</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39; </span>
+<span class="sd">        Do the color and gamma correction, and image scaling on the image</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        IMG : numpy.ndarray</span>
+<span class="sd">            Input image</span>
+<span class="sd">        newlon : numpy.ndarray</span>
+<span class="sd">            Regularly intervalled longitude array</span>
+<span class="sd">        newlat : numpy.ndarray</span>
+<span class="sd">            Regularly intervalled latitude array</span>
+<span class="sd">        gamma : float</span>
+<span class="sd">            Gamma correction -- img_out = img**gamma [Default : 1.0]</span>
+<span class="sd">        fname : string</span>
+<span class="sd">            filename to save the image [Default: None] -- see `save`</span>
+<span class="sd">        save : bool</span>
+<span class="sd">            If true, save to output PNG defined as `fname_mosaic_RGB.png`</span>
+<span class="sd">        hist_eq : bool</span>
+<span class="sd">            Toggle `True` to do histogram equalization to enhance </span>
+<span class="sd">        clip_limit : float</span>
+<span class="sd">            Threshold for histogram equalization. </span>
+<span class="sd">            See https://scikit-image.org/docs/dev/api/skimage.exposure.html#skimage.exposure.equalize_adapthist</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        IMG2 : numpy.ndarray</span>
+<span class="sd">            Output color and gamma corrected file with 99-percentile scaling</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        AssertionError</span>
+<span class="sd">            if `save=True` but no fname defined</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">with</span> <span class="n">nc</span><span class="o">.</span><span class="n">Dataset</span><span class="p">(</span><span class="n">datafile</span><span class="p">,</span> <span class="s2">&quot;r+&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">data</span><span class="p">:</span>
+        <span class="n">IMG</span>  <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;img&#39;</span><span class="p">][:]</span>
+        <span class="n">lon</span>  <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;lon&#39;</span><span class="p">][:]</span>
+        <span class="n">lat</span>  <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;lat&#39;</span><span class="p">][:]</span>
+
+        <span class="n">IMG2</span> <span class="o">=</span> <span class="n">IMG</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">trim_saturated</span><span class="p">:</span>
+            <span class="n">scaling</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">IMG2</span><span class="p">[</span><span class="n">IMG2</span><span class="o">&gt;</span><span class="mf">0.</span><span class="p">],</span> <span class="n">sat_threshold</span><span class="p">)</span>
+            <span class="n">IMGc</span> <span class="o">=</span> <span class="n">IMG2</span><span class="o">/</span><span class="n">scaling</span>
+            <span class="n">IMGc</span><span class="p">[</span><span class="n">IMGc</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">&gt;</span><span class="mf">2.98</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.</span>
+            <span class="n">IMG2</span> <span class="o">=</span> <span class="n">IMGc</span><span class="o">*</span><span class="n">scaling</span>
+
+        <span class="k">if</span> <span class="n">hist_eq</span><span class="p">:</span>
+            <span class="c1">## normalize the image by the 95% percentile</span>
+            <span class="n">IMG2</span> <span class="o">=</span> <span class="n">IMG2</span><span class="o">/</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">IMG2</span><span class="p">[</span><span class="n">IMG2</span><span class="o">&gt;</span><span class="mf">0.</span><span class="p">],</span> <span class="mf">99.9</span><span class="p">))</span>
+            <span class="n">IMG2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">IMG2</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">ci</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+                <span class="n">IMG2</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">]</span> <span class="o">=</span> <span class="n">exposure</span><span class="o">.</span><span class="n">equalize_adapthist</span><span class="p">(</span><span class="n">IMG2</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">],</span> <span class="n">clip_limit</span><span class="o">=</span><span class="n">clip_limit</span><span class="p">)</span>
+
+        <span class="n">IMG2</span> <span class="o">=</span> <span class="n">IMG2</span><span class="o">**</span><span class="n">gamma</span>
+        <span class="c1">## normalize the image by the 99.9% percentile</span>
+        <span class="n">IMG2</span> <span class="o">=</span> <span class="n">IMG2</span><span class="o">/</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">IMG2</span><span class="p">[</span><span class="n">IMG2</span><span class="o">&gt;</span><span class="mf">0.</span><span class="p">],</span> <span class="mf">99.9</span><span class="p">))</span>
+        <span class="n">IMG2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">IMG2</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1">## save the new image out to the netCDF file</span>
+        <span class="k">if</span> <span class="s1">&#39;img_corr&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">img_corrVar</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;img_corr&#39;</span><span class="p">,</span> <span class="s1">&#39;uint8&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="s1">&#39;colors&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">img_corrVar</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">IMG2</span><span class="o">*</span><span class="mi">255</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;img_corr&#39;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">IMG2</span><span class="o">*</span><span class="mi">255</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">save</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">)),</span> \
+            <span class="s2">&quot;please provide a filename to save the data&quot;</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">imsave</span><span class="p">(</span><span class="n">MOS_FOLDER</span><span class="o">+</span><span class="s1">&#39;</span><span class="si">%s</span><span class="s1">_mosaic_RGB.png&#39;</span><span class="o">%</span><span class="n">fname</span><span class="p">,</span> <span class="n">IMG2</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="s1">&#39;lower&#39;</span><span class="p">)</span>
+    
+
+    <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span><span class="mi">10</span><span class="p">),</span><span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">IMG2</span><span class="p">,</span> <span class="n">extent</span><span class="o">=</span><span class="p">(</span><span class="n">lon</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">lon</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="n">lat</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">lat</span><span class="o">.</span><span class="n">max</span><span class="p">()),</span>\
+               <span class="n">origin</span><span class="o">=</span><span class="s1">&#39;lower&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;Longitude [deg]&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;Latitude [deg]&quot;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">IMG2</span></div>
+
+
+<div class="viewcode-block" id="plot_ortho"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.plot_ortho">[docs]</a><span class="k">def</span> <span class="nf">plot_ortho</span><span class="p">(</span><span class="n">datafile</span><span class="p">,</span> <span class="n">sat_height_scale</span><span class="o">=</span><span class="mf">1.</span><span class="p">,</span> <span class="n">facecolor</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">nc</span><span class="o">.</span><span class="n">Dataset</span><span class="p">(</span><span class="n">datafile</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">data</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s1">&#39;img_corr&#39;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">IMG</span>  <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;img_corr&#39;</span><span class="p">][:]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">IMG</span>  <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;img&#39;</span><span class="p">][:]</span>
+        <span class="n">lon</span>  <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;lon&#39;</span><span class="p">][:]</span>
+        <span class="n">lat</span>  <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="p">[</span><span class="s1">&#39;lat&#39;</span><span class="p">][:]</span>
+
+    <span class="n">LON</span><span class="p">,</span> <span class="n">LAT</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">lon</span><span class="p">,</span> <span class="n">lat</span><span class="p">)</span>
+
+    <span class="n">proj</span> <span class="o">=</span> <span class="n">ccrs</span><span class="o">.</span><span class="n">NearsidePerspective</span><span class="p">(</span><span class="n">central_longitude</span><span class="o">=</span><span class="n">LON</span><span class="p">[</span><span class="n">IMG</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">&gt;</span><span class="mf">0.</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">(),</span> \
+                                    <span class="n">central_latitude</span><span class="o">=</span><span class="n">LAT</span><span class="p">[</span><span class="n">IMG</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">&gt;</span><span class="mf">0.</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">(),</span> \
+                                    <span class="n">satellite_height</span><span class="o">=</span><span class="mf">35785.e3</span><span class="o">*</span><span class="n">sat_height_scale</span><span class="p">)</span>
+
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span><span class="mi">10</span><span class="p">),</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">facecolor</span><span class="o">=</span><span class="n">facecolor</span><span class="p">)</span>
+    <span class="n">ax</span>  <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="n">projection</span><span class="o">=</span><span class="n">proj</span><span class="p">)</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">IMG</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">,:],</span> <span class="n">origin</span><span class="o">=</span><span class="s1">&#39;upper&#39;</span><span class="p">,</span> <span class="n">extent</span><span class="o">=</span><span class="p">(</span><span class="n">lon</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">lon</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="n">lat</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">lat</span><span class="o">.</span><span class="n">max</span><span class="p">()),</span> \
+              <span class="n">transform</span><span class="o">=</span><span class="n">ccrs</span><span class="o">.</span><span class="n">PlateCarree</span><span class="p">(),</span> <span class="n">interpolation</span><span class="o">=</span><span class="s1">&#39;hermite&#39;</span><span class="p">)</span>
+
+    <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="get_emis_incid_map"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.get_emis_incid_map">[docs]</a><span class="k">def</span> <span class="nf">get_emis_incid_map</span><span class="p">(</span><span class="n">incid</span><span class="p">,</span> <span class="n">emis</span><span class="p">,</span> <span class="n">lat</span><span class="p">,</span> <span class="n">lon</span><span class="p">,</span> <span class="n">newlat</span><span class="p">,</span> <span class="n">newlon</span><span class="p">,</span> <span class="n">maski</span><span class="p">,</span> \
+                      <span class="n">fname</span><span class="p">,</span> <span class="n">num_procs</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">load</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="c1">## flatten and mask out the bad data points</span>
+    <span class="n">incid</span> <span class="o">=</span> <span class="n">incid</span><span class="o">.</span><span class="n">flatten</span><span class="p">();</span> <span class="n">emis</span> <span class="o">=</span> <span class="n">emis</span><span class="o">.</span><span class="n">flatten</span><span class="p">();</span>
+    <span class="n">lat</span>  <span class="o">=</span> <span class="n">lat</span><span class="o">.</span><span class="n">flatten</span><span class="p">();</span>  <span class="n">lon</span>  <span class="o">=</span> <span class="n">lon</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+    <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">lat</span><span class="o">!=-</span><span class="mi">1000</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">lon</span><span class="o">!=-</span><span class="mi">1000</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">incid</span><span class="p">)</span><span class="o">&lt;</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mf">89.</span><span class="p">))</span>
+
+    <span class="n">incidsf</span>  <span class="o">=</span> <span class="n">incid</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+    <span class="n">emisf</span>   <span class="o">=</span> <span class="n">emis</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+    <span class="n">lonf</span>    <span class="o">=</span> <span class="n">lon</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+    <span class="n">latf</span>    <span class="o">=</span> <span class="n">lat</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+
+    <span class="c1">## create the new grid to project onto and</span>
+    <span class="c1">## project the incidence and emission values onto the new grid</span>
+    <span class="n">LAT</span><span class="p">,</span> <span class="n">LON</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">newlat</span><span class="p">,</span> <span class="n">newlon</span><span class="p">)</span>
+    <span class="c1">#EMIS = griddata((lonf, latf), emisf, (LON, LAT)).T</span>
+    <span class="c1">#INCL = griddata((lonf, latf), inclsf, (LON, LAT)).T</span>
+
+    <span class="k">if</span> <span class="n">load</span><span class="o">&amp;</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">NPY_FOLDER</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_emis.npy&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Loading emission data&quot;</span><span class="p">)</span>
+        <span class="n">EMIS</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">NPY_FOLDER</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_emis.npy&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Processing emission angles&quot;</span><span class="p">)</span>
+        <span class="n">EMIS</span> <span class="o">=</span> <span class="n">project_to_uniform_grid</span><span class="p">(</span><span class="n">lonf</span><span class="p">,</span> <span class="n">latf</span><span class="p">,</span> <span class="n">emisf</span><span class="p">,</span> <span class="n">num_procs</span><span class="o">=</span><span class="n">num_procs</span><span class="p">)</span>
+        <span class="n">EMIS</span><span class="p">[</span><span class="o">~</span><span class="n">maski</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">NPY_FOLDER</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_emis.npy&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">,</span> <span class="n">EMIS</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">load</span><span class="o">&amp;</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">NPY_FOLDER</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_incid.npy&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Loading incidence data&quot;</span><span class="p">)</span>
+        <span class="n">INCL</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">NPY_FOLDER</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_incid.npy&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Processing incidence angles&quot;</span><span class="p">)</span>
+        <span class="n">INCL</span> <span class="o">=</span> <span class="n">project_to_uniform_grid</span><span class="p">(</span><span class="n">lonf</span><span class="p">,</span> <span class="n">latf</span><span class="p">,</span> <span class="n">incidsf</span><span class="p">,</span> <span class="n">num_procs</span><span class="o">=</span><span class="n">num_procs</span><span class="p">)</span>
+        <span class="n">INCL</span><span class="p">[</span><span class="o">~</span><span class="n">maski</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">NPY_FOLDER</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_incid.npy&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">,</span> <span class="n">INCL</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">INCL</span><span class="p">,</span> <span class="n">EMIS</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="scorr_poly"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.scorr_poly">[docs]</a><span class="k">def</span> <span class="nf">scorr_poly</span><span class="p">(</span><span class="n">INCL</span><span class="p">,</span> <span class="n">EMIS</span><span class="p">,</span> <span class="n">newlat</span><span class="p">,</span> <span class="n">newlon</span><span class="p">,</span> <span class="n">IMG</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Fit a 2nd order polynomial in incidence/emission space</span>
+<span class="sd">        to correct for lighting geometry</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Doing polynomial lighting correction&quot;</span><span class="p">)</span>
+
+
+    <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">EMIS</span><span class="p">))</span><span class="o">&amp;</span><span class="p">(</span><span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">INCL</span><span class="p">))</span><span class="o">&amp;</span><span class="p">(</span><span class="n">IMG</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">&gt;</span><span class="mf">0.</span><span class="p">)</span>
+
+    <span class="c1">## get the brightness value of the pixels</span>
+    <span class="n">HSV</span> <span class="o">=</span> <span class="n">color</span><span class="o">.</span><span class="n">rgb2hsv</span><span class="p">(</span><span class="n">IMG</span><span class="o">/</span><span class="n">IMG</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+    <span class="n">IMG_val</span> <span class="o">=</span> <span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">IMG_val</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">IMG_val</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+    <span class="c1">#IMG_val = IMG[:,:,1]</span>
+
+    
+    <span class="n">INCLf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">INCL</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">())</span>
+    <span class="n">EMISf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">EMIS</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">())</span>
+    <span class="n">VALf</span>  <span class="o">=</span> <span class="n">IMG_val</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+
+    <span class="c1">## remove boundary data</span>
+    <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">INCLf</span><span class="o">&gt;</span><span class="mf">0.05</span><span class="p">)</span>
+    <span class="n">INCLf</span> <span class="o">=</span> <span class="n">INCLf</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
+    <span class="n">EMISf</span> <span class="o">=</span> <span class="n">EMISf</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
+    <span class="n">VALf</span>  <span class="o">=</span> <span class="n">VALf</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
+
+    <span class="n">ind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">INCLf</span><span class="p">)))</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">ind</span><span class="p">)</span>
+    <span class="n">ind</span> <span class="o">=</span> <span class="n">ind</span><span class="p">[:</span><span class="mi">1000</span><span class="p">]</span>
+
+    <span class="n">INCLf</span> <span class="o">=</span> <span class="n">INCLf</span><span class="p">[</span><span class="n">ind</span><span class="p">];</span> <span class="n">EMISf</span> <span class="o">=</span> <span class="n">EMISf</span><span class="p">[</span><span class="n">ind</span><span class="p">];</span> <span class="n">VALf</span> <span class="o">=</span> <span class="n">VALf</span><span class="p">[</span><span class="n">ind</span><span class="p">]</span>
+
+    <span class="c1"># create the two axis (x is mu, y is mu0)</span>
+    <span class="n">x</span>  <span class="o">=</span> <span class="n">INCLf</span><span class="p">;</span> <span class="n">y</span> <span class="o">=</span> <span class="n">EMISf</span>
+    <span class="n">xx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">INCL</span><span class="p">);</span> <span class="n">yy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">EMIS</span><span class="p">)</span>
+
+    <span class="n">m</span> <span class="o">=</span> <span class="mi">5</span> <span class="c1">## polynomial order</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">m</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">):</span>
+            <span class="n">A</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="p">(</span><span class="n">x</span><span class="o">**</span><span class="n">i</span><span class="p">)</span><span class="o">*</span><span class="p">(</span><span class="n">y</span><span class="o">**</span><span class="n">j</span><span class="p">)</span> <span class="p">)</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">A</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="c1"># fit the polynomial</span>
+    <span class="n">coeff</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">lstsq</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">VALf</span><span class="p">,</span> <span class="n">rcond</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+    <span class="c1"># create the correction from the new polynomial</span>
+    <span class="n">SCORR</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">INCL</span><span class="p">)</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">m</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">):</span>
+            <span class="n">SCORR</span> <span class="o">+=</span> <span class="n">coeff</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">*</span><span class="p">(</span><span class="n">xx</span><span class="o">**</span><span class="n">i</span><span class="p">)</span><span class="o">*</span><span class="p">(</span><span class="n">yy</span><span class="o">**</span><span class="n">j</span><span class="p">)</span>
+            <span class="n">k</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="c1"># ignore negative values</span>
+    <span class="n">SCORR</span><span class="p">[</span><span class="n">SCORR</span><span class="o">&lt;</span><span class="mf">0.</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+
+    <span class="c1">## correct the image and normalize</span>
+    <span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">]</span><span class="o">/</span><span class="n">SCORR</span>
+    <span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">]</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">][</span><span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">]</span><span class="o">&gt;</span><span class="mf">0.</span><span class="p">],</span> <span class="mi">99</span><span class="p">)</span>
+    <span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">],</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">HSV</span><span class="p">[:,:,</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+
+    <span class="c1"># convert back to RGB</span>
+    <span class="n">IMG_corr</span>   <span class="o">=</span> <span class="n">color</span><span class="o">.</span><span class="n">hsv2rgb</span><span class="p">(</span><span class="n">HSV</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">IMG_corr</span></div>
+
+
+<div class="viewcode-block" id="scorr_fft"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.scorr_fft">[docs]</a><span class="k">def</span> <span class="nf">scorr_fft</span><span class="p">(</span><span class="n">IMG</span><span class="p">,</span> <span class="n">fname</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">4.</span><span class="p">,</span> <span class="n">colorspace</span><span class="o">=</span><span class="s1">&#39;hsv&#39;</span><span class="p">,</span> <span class="n">trim_rad</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">trim_threshold</span><span class="o">=</span><span class="mf">0.95</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Do a correction using a FFT based high pass filter. This works by</span>
+<span class="sd">        creating a mask of low-frequency (large scale) light variation which is used to divide</span>
+<span class="sd">        the original image to remove light gradients in the image.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        -----------</span>
+<span class="sd">        IMG : numpy.ndarray</span>
+<span class="sd">            the input image to be processed</span>
+<span class="sd">        fname : string</span>
+<span class="sd">            the name of the file (used for outputing the mask and FFT image)</span>
+<span class="sd">        radius : float</span>
+<span class="sd">            the radius of the Guassian filter that will be convolved </span>
+<span class="sd">            with the image to extract the low frqeuency features</span>
+<span class="sd">        trim_rad : float</span>
+<span class="sd">            the radius to use to clip the image (to remove noise at the edges). </span>
+<span class="sd">            The radius is given by `trim_rad*radius`, so `trim_rad` is the fraction/multiple</span>
+<span class="sd">            of the original radius to use to trim the edges</span>
+<span class="sd">        trim_threshold : float</span>
+<span class="sd">            The threshold value for the trimming mask </span>
+<span class="sd">            to remove edge noise. Values for the mask within the image will be 1</span>
+<span class="sd">            while outside the image will be 0. Near the edges, the values will be </span>
+<span class="sd">            in between. Choose a value close to 1 to clip close to the image, values </span>
+<span class="sd">            close to zero will extend the edge.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="kn">from</span> <span class="nn">scipy.ndimage</span> <span class="kn">import</span> <span class="n">center_of_mass</span>
+
+
+    <span class="n">scale</span> <span class="o">=</span> <span class="n">IMG</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">colorspace</span><span class="o">==</span><span class="s1">&#39;hsv&#39;</span><span class="p">:</span>
+        <span class="n">data</span>  <span class="o">=</span> <span class="n">color</span><span class="o">.</span><span class="n">rgb2hsv</span><span class="p">(</span><span class="n">IMG</span><span class="o">/</span><span class="n">scale</span><span class="p">)</span>
+        <span class="n">axis</span> <span class="o">=</span> <span class="mi">2</span>
+        <span class="n">invfunc</span> <span class="o">=</span> <span class="n">color</span><span class="o">.</span><span class="n">hsv2rgb</span>
+    <span class="k">elif</span> <span class="n">colorspace</span><span class="o">==</span><span class="s1">&#39;lab&#39;</span><span class="p">:</span>
+        <span class="n">data</span>    <span class="o">=</span> <span class="n">color</span><span class="o">.</span><span class="n">rgb2lab</span><span class="p">(</span><span class="n">IMG</span><span class="o">/</span><span class="n">scale</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+        <span class="n">axis</span>    <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">invfunc</span> <span class="o">=</span> <span class="n">color</span><span class="o">.</span><span class="n">lab2rgb</span>
+    <span class="k">elif</span> <span class="n">colorspace</span><span class="o">==</span><span class="s1">&#39;yuv&#39;</span><span class="p">:</span>
+        <span class="n">data</span>  <span class="o">=</span> <span class="n">color</span><span class="o">.</span><span class="n">rgb2yuv</span><span class="p">(</span><span class="n">IMG</span><span class="o">/</span><span class="n">scale</span><span class="p">)</span>
+        <span class="n">axis</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">invfunc</span> <span class="o">=</span> <span class="n">color</span><span class="o">.</span><span class="n">yuv2rgb</span>
+    <span class="k">elif</span> <span class="n">colorspace</span><span class="o">==</span><span class="s1">&#39;rgb&#39;</span><span class="p">:</span>
+        <span class="n">data</span>  <span class="o">=</span> <span class="n">IMG</span><span class="o">/</span><span class="n">IMG</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="n">axis</span>  <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">invfunc</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">img</span><span class="p">:</span> <span class="n">img</span>
+
+    <span class="n">value</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:,:,</span><span class="n">axis</span><span class="p">]</span>
+
+    <span class="c1"># Center the image (better for the FFT)</span>
+    <span class="n">com</span>    <span class="o">=</span> <span class="n">center_of_mass</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="n">dshift</span> <span class="o">=</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">IMG</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">//</span><span class="mi">2</span><span class="o">-</span><span class="n">com</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">IMG</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">//</span><span class="mi">2</span><span class="o">-</span><span class="n">com</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+
+    <span class="n">data</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">roll</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">dshift</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:,:,</span><span class="n">axis</span><span class="p">]</span>
+
+    <span class="c1"># Do the FFT and get the filter</span>
+    <span class="n">ifft2</span> <span class="o">=</span> <span class="n">get_fft</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="n">radius</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">imsave</span><span class="p">(</span><span class="n">MASK_FOLDER</span><span class="o">+</span><span class="n">fname</span><span class="o">+</span><span class="s2">&quot;ifft.png&quot;</span><span class="p">,</span> <span class="n">ifft2</span><span class="p">)</span>
+
+    <span class="c1"># Divide the image by the filter to remove high frequency noise</span>
+    <span class="k">if</span> <span class="n">colorspace</span> <span class="o">!=</span> <span class="s1">&#39;rgb&#39;</span><span class="p">:</span>
+        <span class="n">valnew</span> <span class="o">=</span> <span class="n">value</span><span class="o">/</span><span class="n">ifft2</span>
+        <span class="n">data</span><span class="p">[:,:,</span><span class="n">axis</span><span class="p">]</span> <span class="o">=</span> <span class="n">valnew</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">ci</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+            <span class="n">data</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:,:,</span><span class="n">ci</span><span class="p">]</span><span class="o">/</span><span class="n">ifft2</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">/</span><span class="n">data</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+
+    <span class="c1"># Create a mask to trim the edges</span>
+    <span class="n">picmask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">data</span><span class="p">[:,:,</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="c1"># Find the pixels which contain image data</span>
+    <span class="n">picmask</span><span class="p">[</span><span class="n">invfunc</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">&gt;</span><span class="mf">0.3</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.</span>
+
+    <span class="c1"># Filter the mask to blur the edges</span>
+    <span class="n">Lfilt</span>  <span class="o">=</span> <span class="n">get_fft</span><span class="p">(</span><span class="n">picmask</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="n">trim_rad</span><span class="o">*</span><span class="n">radius</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+
+    <span class="c1"># Trim the edge values based on the given threshold</span>
+    <span class="n">mask</span> <span class="o">=</span> <span class="n">Lfilt</span><span class="o">&lt;</span><span class="n">trim_threshold</span>
+
+    <span class="c1"># Save the mask as an image</span>
+    <span class="n">maskimg</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">*</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+    <span class="n">maskimg</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">imsave</span><span class="p">(</span><span class="n">MASK_FOLDER</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_Lmask.png&quot;</span><span class="o">%</span><span class="n">fname</span><span class="p">,</span> <span class="n">maskimg</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">IMG</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">IMG</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])))</span>
+
+    <span class="c1"># Trim the input image with this mask</span>
+    <span class="n">IMGf</span>  <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">*</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">IMGf</span><span class="p">[</span><span class="n">mask</span><span class="p">,:]</span> <span class="o">=</span> <span class="mf">0.</span>
+    <span class="n">datanew</span>  <span class="o">=</span> <span class="n">IMGf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">IMG</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+    
+    <span class="c1"># Obtain the new image and transform it back to the original axis</span>
+    <span class="n">IMG</span> <span class="o">=</span> <span class="n">invfunc</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">roll</span><span class="p">(</span><span class="n">datanew</span><span class="p">,</span> <span class="p">(</span><span class="o">-</span><span class="n">dshift</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="n">dshift</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">)))</span><span class="o">*</span><span class="n">scale</span>
+    <span class="k">return</span> <span class="n">IMG</span></div>
+
+<div class="viewcode-block" id="get_fft"><a class="viewcode-back" href="../../projection.html#projection.mosaic_funcs.get_fft">[docs]</a><span class="k">def</span> <span class="nf">get_fft</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">radius</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Performs a FFT to convolve a Gaussian filter</span>
+<span class="sd">        with the input image. </span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        value : numpy.ndarray</span>
+<span class="sd">            The input 2D image to process</span>
+<span class="sd">        radius : float</span>
+<span class="sd">            The radius of the Gaussian filter (in pixels)</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ifft2 : numpy.ndarray</span>
+<span class="sd">            The filter corresponding to the convolution</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="kn">from</span> <span class="nn">scipy</span> <span class="kn">import</span> <span class="n">fftpack</span>
+    <span class="c1">## create the low pass filter</span>
+    <span class="n">xx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+    <span class="n">yy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+    <span class="n">XX</span><span class="p">,</span> <span class="n">YY</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">xx</span><span class="p">,</span> <span class="n">yy</span><span class="p">)</span>
+    
+    <span class="n">dist</span> <span class="o">=</span> <span class="p">(</span><span class="n">XX</span> <span class="o">-</span> <span class="n">xx</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="o">**</span><span class="mf">2.</span> <span class="o">+</span> <span class="p">(</span><span class="n">YY</span> <span class="o">-</span> <span class="n">yy</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="o">**</span><span class="mf">2.</span>
+    <span class="c1">## exponential profile</span>
+    <span class="n">lp_filter</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">dist</span><span class="o">/</span><span class="p">(</span><span class="n">radius</span><span class="o">**</span><span class="mf">2.</span><span class="p">))</span>
+
+    <span class="c1">## apply FFT to the value component</span>
+    <span class="n">f1</span>  <span class="o">=</span> <span class="n">fftpack</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span><span class="n">fftpack</span><span class="o">.</span><span class="n">fft2</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+    <span class="c1">#f1  = fftpack.fftshift(fftpack.fft2(IMGr[:,:,ci]))</span>
+
+
+    <span class="n">filt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="n">f1</span><span class="p">,</span> <span class="n">lp_filter</span><span class="p">)</span>
+
+    <span class="c1">## transform back to coordinate space</span>
+    <span class="n">ifft1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">fftpack</span><span class="o">.</span><span class="n">ifft2</span><span class="p">(</span><span class="n">fftpack</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">filt</span><span class="p">)))</span>
+
+    <span class="c1">## limit the filter so we don&#39;t have unwanted growth</span>
+    <span class="n">ifft2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">ifft1</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ifft2</span></div>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2021, Ramanakumar Sankar.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

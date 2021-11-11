@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html class="writer-html4" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>projection.projector &mdash; JunoCamProjection  documentation</title><link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../../_static/jquery.js"></script>
+        <script type="text/javascript" src="../../_static/underscore.js"></script>
+        <script type="text/javascript" src="../../_static/doctools.js"></script>
+        <script type="text/javascript" src="../../_static/language_data.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> JunoCamProjection
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../readme_link.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../projection.html">Projection module</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">JunoCamProjection</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>projection.projector</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for projection.projector</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">json</span><span class="o">,</span> <span class="nn">glob</span><span class="o">,</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">skimage</span> <span class="kn">import</span> <span class="n">feature</span>
+<span class="kn">from</span> <span class="nn">sklearn.metrics</span> <span class="kn">import</span> <span class="n">pairwise_distances</span>
+<span class="kn">from</span> <span class="nn">.mosaic_funcs</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="c1"># speed of light</span>
+<span class="n">c_light</span> <span class="o">=</span> <span class="mf">3.e5</span>
+
+<span class="c1">## for decompanding -- taken from Kevin Gill&#39;s github page </span>
+<span class="n">SQROOT</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">13</span><span class="p">,</span> <span class="mi">14</span><span class="p">,</span> <span class="mi">15</span><span class="p">,</span>
+                   <span class="mi">16</span><span class="p">,</span> <span class="mi">17</span><span class="p">,</span> <span class="mi">18</span><span class="p">,</span> <span class="mi">19</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">21</span><span class="p">,</span> <span class="mi">22</span><span class="p">,</span> <span class="mi">23</span><span class="p">,</span> <span class="mi">25</span><span class="p">,</span> <span class="mi">27</span><span class="p">,</span> <span class="mi">29</span><span class="p">,</span> <span class="mi">31</span><span class="p">,</span> <span class="mi">33</span><span class="p">,</span> <span class="mi">35</span><span class="p">,</span> <span class="mi">37</span><span class="p">,</span> <span class="mi">39</span><span class="p">,</span>
+                   <span class="mi">41</span><span class="p">,</span> <span class="mi">43</span><span class="p">,</span> <span class="mi">45</span><span class="p">,</span> <span class="mi">47</span><span class="p">,</span> <span class="mi">49</span><span class="p">,</span> <span class="mi">51</span><span class="p">,</span> <span class="mi">53</span><span class="p">,</span> <span class="mi">55</span><span class="p">,</span> <span class="mi">57</span><span class="p">,</span> <span class="mi">59</span><span class="p">,</span> <span class="mi">61</span><span class="p">,</span> <span class="mi">63</span><span class="p">,</span> <span class="mi">67</span><span class="p">,</span> <span class="mi">71</span><span class="p">,</span> <span class="mi">75</span><span class="p">,</span>
+                   <span class="mi">79</span><span class="p">,</span> <span class="mi">83</span><span class="p">,</span> <span class="mi">87</span><span class="p">,</span> <span class="mi">91</span><span class="p">,</span> <span class="mi">95</span><span class="p">,</span> <span class="mi">99</span><span class="p">,</span> <span class="mi">103</span><span class="p">,</span> <span class="mi">107</span><span class="p">,</span> <span class="mi">111</span><span class="p">,</span> <span class="mi">115</span><span class="p">,</span> <span class="mi">119</span><span class="p">,</span> <span class="mi">123</span><span class="p">,</span> <span class="mi">127</span><span class="p">,</span> <span class="mi">131</span><span class="p">,</span>
+                   <span class="mi">135</span><span class="p">,</span> <span class="mi">139</span><span class="p">,</span> <span class="mi">143</span><span class="p">,</span> <span class="mi">147</span><span class="p">,</span> <span class="mi">151</span><span class="p">,</span> <span class="mi">155</span><span class="p">,</span> <span class="mi">159</span><span class="p">,</span> <span class="mi">163</span><span class="p">,</span> <span class="mi">167</span><span class="p">,</span> <span class="mi">171</span><span class="p">,</span> <span class="mi">175</span><span class="p">,</span> <span class="mi">179</span><span class="p">,</span>
+                   <span class="mi">183</span><span class="p">,</span> <span class="mi">187</span><span class="p">,</span> <span class="mi">191</span><span class="p">,</span> <span class="mi">195</span><span class="p">,</span> <span class="mi">199</span><span class="p">,</span> <span class="mi">203</span><span class="p">,</span> <span class="mi">207</span><span class="p">,</span> <span class="mi">211</span><span class="p">,</span> <span class="mi">215</span><span class="p">,</span> <span class="mi">219</span><span class="p">,</span> <span class="mi">223</span><span class="p">,</span> <span class="mi">227</span><span class="p">,</span>
+                   <span class="mi">231</span><span class="p">,</span> <span class="mi">235</span><span class="p">,</span> <span class="mi">239</span><span class="p">,</span> <span class="mi">243</span><span class="p">,</span> <span class="mi">247</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">263</span><span class="p">,</span> <span class="mi">271</span><span class="p">,</span> <span class="mi">279</span><span class="p">,</span> <span class="mi">287</span><span class="p">,</span> <span class="mi">295</span><span class="p">,</span> <span class="mi">303</span><span class="p">,</span>
+                   <span class="mi">311</span><span class="p">,</span> <span class="mi">319</span><span class="p">,</span> <span class="mi">327</span><span class="p">,</span> <span class="mi">335</span><span class="p">,</span> <span class="mi">343</span><span class="p">,</span> <span class="mi">351</span><span class="p">,</span> <span class="mi">359</span><span class="p">,</span> <span class="mi">367</span><span class="p">,</span> <span class="mi">375</span><span class="p">,</span> <span class="mi">383</span><span class="p">,</span> <span class="mi">391</span><span class="p">,</span> <span class="mi">399</span><span class="p">,</span>
+                   <span class="mi">407</span><span class="p">,</span> <span class="mi">415</span><span class="p">,</span> <span class="mi">423</span><span class="p">,</span> <span class="mi">431</span><span class="p">,</span> <span class="mi">439</span><span class="p">,</span> <span class="mi">447</span><span class="p">,</span> <span class="mi">455</span><span class="p">,</span> <span class="mi">463</span><span class="p">,</span> <span class="mi">471</span><span class="p">,</span> <span class="mi">479</span><span class="p">,</span> <span class="mi">487</span><span class="p">,</span> <span class="mi">495</span><span class="p">,</span>
+                   <span class="mi">503</span><span class="p">,</span> <span class="mi">511</span><span class="p">,</span> <span class="mi">519</span><span class="p">,</span> <span class="mi">527</span><span class="p">,</span> <span class="mi">535</span><span class="p">,</span> <span class="mi">543</span><span class="p">,</span> <span class="mi">551</span><span class="p">,</span> <span class="mi">559</span><span class="p">,</span> <span class="mi">567</span><span class="p">,</span> <span class="mi">575</span><span class="p">,</span> <span class="mi">583</span><span class="p">,</span> <span class="mi">591</span><span class="p">,</span>
+                   <span class="mi">599</span><span class="p">,</span> <span class="mi">607</span><span class="p">,</span> <span class="mi">615</span><span class="p">,</span> <span class="mi">623</span><span class="p">,</span> <span class="mi">631</span><span class="p">,</span> <span class="mi">639</span><span class="p">,</span> <span class="mi">647</span><span class="p">,</span> <span class="mi">655</span><span class="p">,</span> <span class="mi">663</span><span class="p">,</span> <span class="mi">671</span><span class="p">,</span> <span class="mi">679</span><span class="p">,</span> <span class="mi">687</span><span class="p">,</span>
+                   <span class="mi">695</span><span class="p">,</span> <span class="mi">703</span><span class="p">,</span> <span class="mi">711</span><span class="p">,</span> <span class="mi">719</span><span class="p">,</span> <span class="mi">727</span><span class="p">,</span> <span class="mi">735</span><span class="p">,</span> <span class="mi">743</span><span class="p">,</span> <span class="mi">751</span><span class="p">,</span> <span class="mi">759</span><span class="p">,</span> <span class="mi">767</span><span class="p">,</span> <span class="mi">775</span><span class="p">,</span> <span class="mi">783</span><span class="p">,</span>
+                   <span class="mi">791</span><span class="p">,</span> <span class="mi">799</span><span class="p">,</span> <span class="mi">807</span><span class="p">,</span> <span class="mi">815</span><span class="p">,</span> <span class="mi">823</span><span class="p">,</span> <span class="mi">831</span><span class="p">,</span> <span class="mi">839</span><span class="p">,</span> <span class="mi">847</span><span class="p">,</span> <span class="mi">855</span><span class="p">,</span> <span class="mi">863</span><span class="p">,</span> <span class="mi">871</span><span class="p">,</span> <span class="mi">879</span><span class="p">,</span>
+                   <span class="mi">887</span><span class="p">,</span> <span class="mi">895</span><span class="p">,</span> <span class="mi">903</span><span class="p">,</span> <span class="mi">911</span><span class="p">,</span> <span class="mi">919</span><span class="p">,</span> <span class="mi">927</span><span class="p">,</span> <span class="mi">935</span><span class="p">,</span> <span class="mi">943</span><span class="p">,</span> <span class="mi">951</span><span class="p">,</span> <span class="mi">959</span><span class="p">,</span> <span class="mi">967</span><span class="p">,</span> <span class="mi">975</span><span class="p">,</span>
+                   <span class="mi">983</span><span class="p">,</span> <span class="mi">991</span><span class="p">,</span> <span class="mi">999</span><span class="p">,</span> <span class="mi">1007</span><span class="p">,</span> <span class="mi">1023</span><span class="p">,</span> <span class="mi">1039</span><span class="p">,</span> <span class="mi">1055</span><span class="p">,</span> <span class="mi">1071</span><span class="p">,</span> <span class="mi">1087</span><span class="p">,</span> <span class="mi">1103</span><span class="p">,</span> <span class="mi">1119</span><span class="p">,</span>
+                   <span class="mi">1135</span><span class="p">,</span> <span class="mi">1151</span><span class="p">,</span> <span class="mi">1167</span><span class="p">,</span> <span class="mi">1183</span><span class="p">,</span> <span class="mi">1199</span><span class="p">,</span> <span class="mi">1215</span><span class="p">,</span> <span class="mi">1231</span><span class="p">,</span> <span class="mi">1247</span><span class="p">,</span> <span class="mi">1263</span><span class="p">,</span> <span class="mi">1279</span><span class="p">,</span>
+                   <span class="mi">1295</span><span class="p">,</span> <span class="mi">1311</span><span class="p">,</span> <span class="mi">1327</span><span class="p">,</span> <span class="mi">1343</span><span class="p">,</span> <span class="mi">1359</span><span class="p">,</span> <span class="mi">1375</span><span class="p">,</span> <span class="mi">1391</span><span class="p">,</span> <span class="mi">1407</span><span class="p">,</span> <span class="mi">1439</span><span class="p">,</span> <span class="mi">1471</span><span class="p">,</span>
+                   <span class="mi">1503</span><span class="p">,</span> <span class="mi">1535</span><span class="p">,</span> <span class="mi">1567</span><span class="p">,</span> <span class="mi">1599</span><span class="p">,</span> <span class="mi">1631</span><span class="p">,</span> <span class="mi">1663</span><span class="p">,</span> <span class="mi">1695</span><span class="p">,</span> <span class="mi">1727</span><span class="p">,</span> <span class="mi">1759</span><span class="p">,</span> <span class="mi">1791</span><span class="p">,</span>
+                   <span class="mi">1823</span><span class="p">,</span> <span class="mi">1855</span><span class="p">,</span> <span class="mi">1887</span><span class="p">,</span> <span class="mi">1919</span><span class="p">,</span> <span class="mi">1951</span><span class="p">,</span> <span class="mi">1983</span><span class="p">,</span> <span class="mi">2015</span><span class="p">,</span> <span class="mi">2047</span><span class="p">,</span> <span class="mi">2079</span><span class="p">,</span> <span class="mi">2111</span><span class="p">,</span>
+                   <span class="mi">2143</span><span class="p">,</span> <span class="mi">2175</span><span class="p">,</span> <span class="mi">2207</span><span class="p">,</span> <span class="mi">2239</span><span class="p">,</span> <span class="mi">2271</span><span class="p">,</span> <span class="mi">2303</span><span class="p">,</span> <span class="mi">2335</span><span class="p">,</span> <span class="mi">2367</span><span class="p">,</span> <span class="mi">2399</span><span class="p">,</span> <span class="mi">2431</span><span class="p">,</span>
+                   <span class="mi">2463</span><span class="p">,</span> <span class="mi">2495</span><span class="p">,</span> <span class="mi">2527</span><span class="p">,</span> <span class="mi">2559</span><span class="p">,</span> <span class="mi">2591</span><span class="p">,</span> <span class="mi">2623</span><span class="p">,</span> <span class="mi">2655</span><span class="p">,</span> <span class="mi">2687</span><span class="p">,</span> <span class="mi">2719</span><span class="p">,</span> <span class="mi">2751</span><span class="p">,</span>
+                   <span class="mi">2783</span><span class="p">,</span> <span class="mi">2815</span><span class="p">,</span> <span class="mi">2847</span><span class="p">,</span> <span class="mi">2879</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">double</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="decompand"><a class="viewcode-back" href="../../projection.html#projection.projector.decompand">[docs]</a><span class="k">def</span> <span class="nf">decompand</span><span class="p">(</span><span class="n">image</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Decompands the image from the 8-bit in the public release</span>
+<span class="sd">        to the original 12-bit shot by JunoCam. See https://github.com/kmgill/cassini_processing</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        image : numpy.ndarray</span>
+<span class="sd">            8-bit input image</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        data : numpy.ndarray</span>
+<span class="sd">            Original 12-bit image</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">255.</span><span class="o">*</span><span class="n">image</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">ny</span><span class="p">,</span> <span class="n">nx</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">shape</span>
+
+    <span class="n">data2</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ny</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nx</span><span class="p">):</span>
+            <span class="n">data2</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">SQROOT</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">]))]</span>
+
+    <span class="k">return</span> <span class="n">data2</span></div>
+
+<div class="viewcode-block" id="Projector"><a class="viewcode-back" href="../../projection.html#projection.projector.Projector">[docs]</a><span class="k">class</span> <span class="nc">Projector</span><span class="p">():</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        The main projector class that determines the surface intercept points</span>
+<span class="sd">        of each pixel in a JunoCam image</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">imagefolder</span><span class="p">,</span> <span class="n">meta</span><span class="p">,</span> <span class="n">kerneldir</span><span class="o">=</span><span class="s1">&#39;.&#39;</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            Initalize the `Projector` class and set up the framelets and </span>
+<span class="sd">            required SPICE kernels</span>
+
+<span class="sd">            Parameters</span>
+<span class="sd">            -----------</span>
+<span class="sd">            imagefolder : string</span>
+<span class="sd">                Path to the folder containing the `xxxx-raw.png` files </span>
+
+<span class="sd">            meta : string</span>
+<span class="sd">                Path to the metadata JSON file</span>
+
+<span class="sd">            kerneldir : string</span>
+<span class="sd">                Path to the SPICE kernels [default: current folder]</span>
+
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">meta</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">metafile</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">metafile</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_utc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s1">&#39;START_TIME&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fname</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s1">&#39;FILE_NAME&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;-raw.png&#39;</span><span class="p">,</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+        <span class="n">intframe_delay</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s1">&#39;INTERFRAME_DELAY&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39; &#39;</span><span class="p">)</span>
+        
+        <span class="bp">self</span><span class="o">.</span><span class="n">fullimg</span>  <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">imagefolder</span><span class="o">+</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">-raw.png&quot;</span><span class="o">%</span><span class="bp">self</span><span class="o">.</span><span class="n">fname</span><span class="p">)</span>
+
+        <span class="c1"># ignore color channels in the image</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fullimg</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="o">==</span><span class="mi">3</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fullimg</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fullimg</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">sclat</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s1">&#39;SUB_SPACECRAFT_LATITUDE&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sclon</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s1">&#39;SUB_SPACECRAFT_LONGITUDE&#39;</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">frame_delay</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">intframe_delay</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> 
+
+        <span class="c1">## number of strips </span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nframelets</span>  <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s1">&#39;LINES&#39;</span><span class="p">]</span><span class="o">/</span><span class="n">FRAME_HEIGHT</span><span class="p">)</span>
+        <span class="c1">## number of RGB frames </span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nframes</span>     <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nframelets</span><span class="o">/</span><span class="mi">3</span><span class="p">)</span>
+        
+        <span class="bp">self</span><span class="o">.</span><span class="n">load_kernels</span><span class="p">(</span><span class="n">kerneldir</span><span class="p">)</span>
+        
+        <span class="bp">self</span><span class="o">.</span><span class="n">re</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">rp</span> <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">bodvar</span><span class="p">(</span><span class="n">spice</span><span class="o">.</span><span class="n">bodn2c</span><span class="p">(</span><span class="s1">&#39;JUPITER&#39;</span><span class="p">),</span> <span class="s1">&#39;RADII&#39;</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flattening</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">re</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">rp</span><span class="p">)</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">re</span>
+
+        <span class="c1">## calculate the start time </span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_et</span>    <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">str2et</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">start_utc</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">savefolder</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%s</span><span class="s2">_proj/&quot;</span><span class="o">%</span><span class="bp">self</span><span class="o">.</span><span class="n">fname</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">jitter</span> <span class="o">=</span> <span class="mf">0.</span>
+
+<div class="viewcode-block" id="Projector.load_kernels"><a class="viewcode-back" href="../../projection.html#projection.projector.Projector.load_kernels">[docs]</a>    <span class="k">def</span> <span class="nf">load_kernels</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">KERNEL_DATAFOLDER</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            Determines and loads the required SPICE data kernels</span>
+<span class="sd">            to project and process the current image</span>
+
+<span class="sd">            Parameters</span>
+<span class="sd">            ----------</span>
+<span class="sd">            KERNEL_DATAFOLDER : string</span>
+<span class="sd">                path to the location of the Juno SPICE kernels</span>
+
+<span class="sd">            Raises</span>
+<span class="sd">            ------</span>
+<span class="sd">            AssertionError</span>
+<span class="sd">                if no kernels were found for the date range</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c1">## find and load the kernels for a specific date </span>
+        <span class="n">iks</span>   <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">KERNEL_DATAFOLDER</span><span class="o">+</span><span class="s2">&quot;ik/juno_junocam_v*.ti&quot;</span><span class="p">))</span>
+        <span class="n">cks</span>   <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">KERNEL_DATAFOLDER</span><span class="o">+</span><span class="s2">&quot;ck/juno_sc_rec_*.bc&quot;</span><span class="p">))</span>
+        <span class="n">spks1</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">KERNEL_DATAFOLDER</span><span class="o">+</span><span class="s2">&quot;spk/spk_rec_*.bsp&quot;</span><span class="p">))</span>
+        <span class="n">spks2</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">KERNEL_DATAFOLDER</span><span class="o">+</span><span class="s2">&quot;spk/jup*.bsp&quot;</span><span class="p">))</span>
+        <span class="n">spks3</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">KERNEL_DATAFOLDER</span><span class="o">+</span><span class="s2">&quot;spk/de*.bsp&quot;</span><span class="p">))</span>
+        <span class="n">pcks</span>  <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">KERNEL_DATAFOLDER</span><span class="o">+</span><span class="s2">&quot;pck/pck*.tpc&quot;</span><span class="p">))</span>
+        <span class="n">fks</span>   <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">KERNEL_DATAFOLDER</span><span class="o">+</span><span class="s2">&quot;fk/juno_v*.tf&quot;</span><span class="p">))</span>
+        <span class="n">sclks</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">KERNEL_DATAFOLDER</span><span class="o">+</span><span class="s2">&quot;sclk/JNO_SCLKSCET.*.tsc&quot;</span><span class="p">))</span>
+        <span class="n">lsks</span>  <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">KERNEL_DATAFOLDER</span><span class="o">+</span><span class="s2">&quot;lsk/naif*.tls&quot;</span><span class="p">))</span>
+
+        <span class="n">year</span><span class="p">,</span> <span class="n">month</span><span class="p">,</span> <span class="n">day</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_utc</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="p">)</span>
+        <span class="n">yy</span> <span class="o">=</span> <span class="n">year</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+        <span class="n">mm</span> <span class="o">=</span> <span class="n">month</span>
+        <span class="n">dd</span> <span class="o">=</span> <span class="n">day</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
+
+        <span class="n">intdate</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%s%s%s</span><span class="s2">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">yy</span><span class="p">,</span><span class="n">mm</span><span class="p">,</span><span class="n">dd</span><span class="p">))</span>
+
+        <span class="n">kernels</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1">## find the ck and spk kernels for the given date </span>
+        <span class="n">ckpattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;juno_sc_rec_([0-9]</span><span class="si">{6}</span><span class="s1">)_([0-9]</span><span class="si">{6}</span><span class="s1">)\S*&#39;</span>
+        <span class="n">nck</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">ck</span> <span class="ow">in</span> <span class="n">cks</span><span class="p">:</span>
+            <span class="n">fname</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">ck</span><span class="p">)</span>
+            <span class="n">groups</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">ckpattern</span><span class="p">,</span> <span class="n">fname</span><span class="p">)</span>
+            <span class="k">if</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">datestart</span><span class="p">,</span> <span class="n">dateend</span> <span class="o">=</span> <span class="n">groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="k">if</span><span class="p">(</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">datestart</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">intdate</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">dateend</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">intdate</span><span class="p">)</span> <span class="p">):</span>
+                <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ck</span><span class="p">)</span>
+                <span class="n">nck</span> <span class="o">+=</span> <span class="mi">1</span>
+        
+        <span class="sd">&#39;&#39;&#39; use the predicted kernels if there are no rec &#39;&#39;&#39;</span>
+        <span class="k">if</span><span class="p">(</span><span class="n">nck</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Using predicted CK&quot;</span><span class="p">)</span>
+            <span class="n">ckpattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;juno_sc_pre_([0-9]</span><span class="si">{6}</span><span class="s1">)_([0-9]</span><span class="si">{6}</span><span class="s1">)\S*&#39;</span>
+            <span class="k">for</span> <span class="n">ck</span> <span class="ow">in</span> <span class="n">cks</span><span class="p">:</span>
+                <span class="n">fname</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">ck</span><span class="p">)</span>
+                <span class="n">groups</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">ckpattern</span><span class="p">,</span> <span class="n">fname</span><span class="p">)</span>
+                <span class="k">if</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">datestart</span><span class="p">,</span> <span class="n">dateend</span> <span class="o">=</span> <span class="n">groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+                <span class="k">if</span><span class="p">(</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">datestart</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">intdate</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">dateend</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">intdate</span><span class="p">)</span> <span class="p">):</span>
+                    <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ck</span><span class="p">)</span>
+                    <span class="n">nck</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="n">spkpattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;spk_rec_([0-9]</span><span class="si">{6}</span><span class="s1">)_([0-9]</span><span class="si">{6}</span><span class="s1">)\S*&#39;</span>
+        <span class="n">nspk</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">spk</span> <span class="ow">in</span> <span class="n">spks1</span><span class="p">:</span>
+            <span class="n">fname</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">spk</span><span class="p">)</span>
+            <span class="n">groups</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">spkpattern</span><span class="p">,</span> <span class="n">fname</span><span class="p">)</span>
+            <span class="k">if</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">datestart</span><span class="p">,</span> <span class="n">dateend</span> <span class="o">=</span> <span class="n">groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="k">if</span><span class="p">(</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">datestart</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">intdate</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">dateend</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">intdate</span><span class="p">)</span> <span class="p">):</span>
+                <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">spk</span><span class="p">)</span>
+                <span class="n">nspk</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="sd">&#39;&#39;&#39; use the predicted kernels if there are no rec &#39;&#39;&#39;</span>
+        <span class="k">if</span><span class="p">(</span><span class="n">nspk</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Using predicted SPK&quot;</span><span class="p">)</span>
+            <span class="n">spkpattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;spk_pre_([0-9]</span><span class="si">{6}</span><span class="s1">)_([0-9]</span><span class="si">{6}</span><span class="s1">)\S*&#39;</span>
+            <span class="k">for</span> <span class="n">spk</span> <span class="ow">in</span> <span class="n">spks1</span><span class="p">:</span>
+                <span class="n">fname</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">spk</span><span class="p">)</span>
+                <span class="n">groups</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">spkpattern</span><span class="p">,</span> <span class="n">fname</span><span class="p">)</span>
+                <span class="k">if</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">datestart</span><span class="p">,</span> <span class="n">dateend</span> <span class="o">=</span> <span class="n">groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+                <span class="k">if</span><span class="p">(</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">datestart</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">intdate</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">dateend</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">intdate</span><span class="p">)</span> <span class="p">):</span>
+                    <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">spk</span><span class="p">)</span>
+                    <span class="n">nspk</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1">#if(nck*nspk == 0):</span>
+        <span class="c1">#    print(&quot;ERROR: Kernels not found for the date range!&quot;)</span>
+        <span class="k">assert</span> <span class="n">nck</span><span class="o">*</span><span class="n">nspk</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;Kernels not found for the given date range!&quot;</span>
+
+        <span class="c1">## load the latest updates for these </span>
+        <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">iks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">spks2</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">spks3</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pcks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sclks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">kernels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lsks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">kernels</span> <span class="o">=</span> <span class="n">kernels</span>
+        <span class="k">for</span> <span class="n">kernel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernels</span><span class="p">:</span>
+            <span class="n">furnish_c</span><span class="p">(</span><span class="n">kernel</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;ascii&#39;</span><span class="p">))</span>
+            <span class="n">spice</span><span class="o">.</span><span class="n">furnsh</span><span class="p">(</span><span class="n">kernel</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Projector.process_n_c"><a class="viewcode-back" href="../../projection.html#projection.projector.Projector.process_n_c">[docs]</a>    <span class="k">def</span> <span class="nf">process_n_c</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            Project a given frame and filter</span>
+<span class="sd">            used in the multi-core version</span>
+
+<span class="sd">            Parameters</span>
+<span class="sd">            ----------</span>
+<span class="sd">            inp : tuple</span>
+<span class="sd">                framelet number and color index</span>
+
+<span class="sd">            Returns</span>
+<span class="sd">            -------</span>
+<span class="sd">            lats : numpy.ndarray</span>
+<span class="sd">                array of latitudes in the same shape as the framelet (128,1648)</span>
+<span class="sd">            lons : numpy.ndarray</span>
+<span class="sd">                array of longitudes in the same shape as the framelet (128,1648)</span>
+<span class="sd">            scloc : numpy.ndarray</span>
+<span class="sd">                spacecraft position during the frame -- shape (3,)</span>
+<span class="sd">            eti : double</span>
+<span class="sd">                epoch of the spacecraft&#39;s observation for the given frame</span>
+<span class="sd">            pixres : numpy.ndarray</span>
+<span class="sd">                array of spatial resolutions of that pixel of shape (128,1648)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">n</span><span class="p">,</span> <span class="n">ci</span> <span class="o">=</span> <span class="n">inp</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">latmin</span> <span class="o">=</span>  <span class="mf">1000.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">latmax</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1000.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lonmin</span> <span class="o">=</span>  <span class="mf">1000.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lonmax</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1000.</span>
+
+            <span class="n">cami</span>  <span class="o">=</span> <span class="n">CameraModel</span><span class="p">(</span><span class="n">ci</span><span class="p">)</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="mi">3</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span><span class="o">*</span><span class="n">n</span><span class="o">+</span><span class="n">ci</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span>
+            <span class="n">end</span>   <span class="o">=</span> <span class="mi">3</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span><span class="o">*</span><span class="n">n</span><span class="o">+</span><span class="p">(</span><span class="n">ci</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span>
+            <span class="n">frame</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fullimg</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">,:]</span>
+            <span class="n">eti</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_et</span> <span class="o">+</span> <span class="n">cami</span><span class="o">.</span><span class="n">time_bias</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">jitter</span> <span class="o">+</span> \
+                <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">frame_delay</span><span class="o">+</span><span class="n">cami</span><span class="o">.</span><span class="n">iframe_delay</span><span class="p">)</span><span class="o">*</span><span class="n">n</span>
+            <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">                calculate the spacecraft position in the </span>
+<span class="sd">                Jupiter reference frame</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+            <span class="n">scloc</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">spkpos</span><span class="p">(</span><span class="s1">&#39;JUNO&#39;</span><span class="p">,</span> <span class="n">eti</span><span class="p">,</span> <span class="s1">&#39;IAU_JUPITER&#39;</span><span class="p">,</span> <span class="s1">&#39;CN+S&#39;</span><span class="p">,</span> <span class="s1">&#39;JUPITER&#39;</span><span class="p">)</span>
+
+            <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">                calculate the transformation from instrument </span>
+<span class="sd">                to jupiter barycenter</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+            <span class="n">cam2jup</span> <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">pxform</span><span class="p">(</span><span class="s1">&#39;JUNO_JUNOCAM&#39;</span><span class="p">,</span> <span class="s1">&#39;IAU_JUPITER&#39;</span><span class="p">,</span> <span class="n">eti</span><span class="p">)</span>
+            
+            <span class="n">lats</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1000.</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+            <span class="n">lons</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1000.</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+            <span class="c1">#solar_corr = np.ones((FRAME_HEIGHT, FRAME_WIDTH))</span>
+            <span class="n">incid</span>  <span class="o">=</span>  <span class="mf">1000.</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+            <span class="n">emis</span>     <span class="o">=</span>  <span class="mf">1000.</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+            <span class="n">flux_cal</span> <span class="o">=</span>  <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+            
+            <span class="n">process_c</span><span class="p">(</span><span class="n">eti</span><span class="p">,</span> <span class="n">ci</span><span class="p">,</span> <span class="n">cam2jup</span><span class="o">.</span><span class="n">flatten</span><span class="p">(),</span> <span class="n">lons</span><span class="p">,</span> <span class="n">lats</span><span class="p">,</span> <span class="n">incid</span><span class="p">,</span> <span class="n">emis</span><span class="p">,</span> <span class="n">flux_cal</span><span class="p">)</span>
+
+            <span class="c1">#frame = decompand(frame[:])#*solar_corr[:]</span>
+            <span class="sd">&#39;&#39;&#39; </span>
+<span class="sd">                find the resolution for each pixel and then calculate</span>
+<span class="sd">                the finest resolution of the slice</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+
+            <span class="n">dlats</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">lats</span><span class="p">)</span>
+            <span class="n">dlons</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">lons</span><span class="p">)</span>
+            
+            <span class="n">dlat</span> <span class="o">=</span> <span class="p">(</span><span class="n">dlats</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">dlats</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="o">/</span><span class="mf">2.</span>
+            <span class="n">dlon</span> <span class="o">=</span> <span class="p">(</span><span class="n">dlons</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">dlons</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="o">/</span><span class="mf">2.</span>
+            <span class="n">dpix</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">dlat</span><span class="o">**</span><span class="mf">2.</span> <span class="o">+</span> <span class="n">dlon</span><span class="o">**</span><span class="mf">2.</span><span class="p">)</span>
+
+            <span class="k">if</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">dpix</span><span class="p">)</span> <span class="o">==</span> <span class="mf">0.</span><span class="p">):</span>
+                <span class="n">pixres</span> <span class="o">=</span> <span class="mf">0.</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">pixres</span> <span class="o">=</span> <span class="n">dpix</span><span class="p">[</span><span class="n">dpix</span><span class="o">&gt;</span><span class="mf">0.</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">lats</span><span class="p">,</span> <span class="n">lons</span><span class="p">,</span> <span class="n">scloc</span><span class="p">,</span> <span class="n">eti</span><span class="p">,</span> <span class="n">pixres</span><span class="p">,</span> <span class="n">incid</span><span class="p">,</span> <span class="n">emis</span><span class="p">,</span> <span class="n">flux_cal</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="k">return</span></div>
+
+<div class="viewcode-block" id="Projector.find_jitter"><a class="viewcode-back" href="../../projection.html#projection.projector.Projector.find_jitter">[docs]</a>    <span class="k">def</span> <span class="nf">find_jitter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jitter_max</span><span class="o">=</span><span class="mi">25</span><span class="p">,</span> <span class="n">plot</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            Find the jitter in the starting time of the image</span>
+<span class="sd">            by fitting Jupiter&#39;s limb in the framelet</span>
+
+<span class="sd">            Parameters</span>
+<span class="sd">            ----------</span>
+<span class="sd">            jitter_max : float, optional</span>
+<span class="sd">                Maximum jitter magnitude (in ms) [Default: 25]</span>
+<span class="sd">            </span>
+<span class="sd">            plot : bool, optional</span>
+<span class="sd">                Flag to toggle creating a plot of the jitter search</span>
+<span class="sd">                [Default: False]</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">threshold</span> <span class="o">=</span> <span class="mf">0.1</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">fullimg</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">nci</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="o">*</span><span class="mi">3</span><span class="p">):</span>
+            <span class="c1"># find whether the planet limb is in now</span>
+            <span class="c1"># approximating this as the first time the planet is seen</span>
+            <span class="c1"># in the image, which is generally true..</span>
+
+            <span class="n">n</span>  <span class="o">=</span> <span class="n">nci</span><span class="o">//</span><span class="mi">3</span>
+            <span class="n">ci</span> <span class="o">=</span> <span class="n">nci</span><span class="o">%</span><span class="mi">3</span>
+            
+
+            <span class="n">start</span> <span class="o">=</span> <span class="mi">3</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span><span class="o">*</span><span class="n">n</span><span class="o">+</span><span class="n">ci</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span>
+            <span class="n">end</span>   <span class="o">=</span> <span class="mi">3</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span><span class="o">*</span><span class="n">n</span><span class="o">+</span><span class="p">(</span><span class="n">ci</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span>
+            <span class="n">frame</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fullimg</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">,:]</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">frame</span><span class="p">[</span><span class="n">frame</span><span class="o">&gt;</span><span class="n">threshold</span><span class="p">])</span> <span class="o">&gt;</span> <span class="mi">5000</span><span class="p">:</span>
+                <span class="c1"># make sure that the limb is also in the image</span>
+                <span class="c1"># we want to find a frame where both the predicted limb</span>
+                <span class="c1"># with no jitter and the actual limb are visible so that </span>
+                <span class="c1"># the offset we determine is small</span>
+                <span class="n">cami</span>  <span class="o">=</span> <span class="n">CameraModel</span><span class="p">(</span><span class="n">ci</span><span class="p">)</span>
+                <span class="n">eti</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_et</span> <span class="o">+</span> <span class="n">cami</span><span class="o">.</span><span class="n">time_bias</span> <span class="o">+</span> \
+                    <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">frame_delay</span><span class="o">+</span><span class="n">cami</span><span class="o">.</span><span class="n">iframe_delay</span><span class="p">)</span><span class="o">*</span><span class="n">n</span>
+                <span class="n">limb_pts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_limb</span><span class="p">(</span><span class="n">eti</span><span class="p">,</span> <span class="n">cami</span><span class="p">)</span>
+
+                <span class="c1"># bad test image if the limb is not fully visible </span>
+                <span class="c1"># in the frame</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">limb_pts</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">5</span><span class="p">:</span>
+                    <span class="k">break</span>
+
+        <span class="c1"># create the mask of the visible jupiter in the image</span>
+        <span class="n">imgmask</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+        <span class="n">imgmask</span><span class="p">[</span><span class="n">frame</span> <span class="o">&gt;</span> <span class="n">threshold</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+        
+        <span class="k">if</span> <span class="n">plot</span><span class="p">:</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">dpi</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">frame</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;gray&#39;</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">limb_pts</span><span class="p">[:,</span><span class="mi">0</span><span class="p">],</span> <span class="n">limb_pts</span><span class="p">[:,</span><span class="mi">1</span><span class="p">],</span> <span class="s1">&#39;r-&#39;</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">draw</span><span class="p">()</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">pause</span><span class="p">(</span><span class="mf">0.001</span><span class="p">)</span>
+
+        <span class="c1"># find the edges</span>
+        <span class="n">sigma</span> <span class="o">=</span> <span class="mi">8</span>
+        <span class="n">npoints</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">while</span> <span class="n">npoints</span> <span class="o">&lt;</span> <span class="mi">10</span><span class="p">:</span>
+            <span class="n">limb_img</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">feature</span><span class="o">.</span><span class="n">canny</span><span class="p">(</span><span class="n">frame</span><span class="p">[:,</span><span class="mi">24</span><span class="p">:</span><span class="mi">1630</span><span class="p">],</span> <span class="n">sigma</span><span class="o">=</span><span class="n">sigma</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+            <span class="n">limb_img_points</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dstack</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">limb_img</span><span class="o">==</span><span class="mi">1</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">limb_img_points</span><span class="p">[:,</span><span class="mi">0</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">24</span>
+            <span class="n">npoints</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">limb_img_points</span><span class="p">)</span>
+            <span class="n">sigma</span> <span class="o">-=</span> <span class="mi">1</span>
+
+        <span class="n">distances</span> <span class="o">=</span> <span class="n">pairwise_distances</span><span class="p">(</span><span class="n">limb_pts</span><span class="p">,</span> <span class="n">limb_img_points</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">plot</span><span class="p">:</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">limb_img_points</span><span class="p">[:,</span><span class="mi">0</span><span class="p">],</span> <span class="n">limb_img_points</span><span class="p">[:,</span><span class="mi">1</span><span class="p">],</span> <span class="s1">&#39;g-&#39;</span><span class="p">)</span>
+
+
+        <span class="c1"># we&#39;ve found our limb. now we need to find</span>
+        <span class="c1"># the actual limb from SPICE</span>
+        <span class="n">cami</span>  <span class="o">=</span> <span class="n">CameraModel</span><span class="p">(</span><span class="n">ci</span><span class="p">)</span>
+
+        <span class="n">jitter_list</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="n">jitter_max</span><span class="p">,</span> <span class="n">jitter_max</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="mf">1.e3</span>
+
+        <span class="n">min_dists</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">jitter_list</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">jitter</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">jitter_list</span><span class="p">):</span>
+            <span class="n">eti</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_et</span> <span class="o">+</span> <span class="n">cami</span><span class="o">.</span><span class="n">time_bias</span> <span class="o">+</span> <span class="n">jitter</span> <span class="o">+</span> \
+                <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">frame_delay</span><span class="o">+</span><span class="n">cami</span><span class="o">.</span><span class="n">iframe_delay</span><span class="p">)</span><span class="o">*</span><span class="n">n</span>
+
+            <span class="n">limbs_jcam</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_limb</span><span class="p">(</span><span class="n">eti</span><span class="p">,</span> <span class="n">cami</span><span class="p">)</span>
+
+            <span class="n">distances</span> <span class="o">=</span> <span class="n">pairwise_distances</span><span class="p">(</span><span class="n">limbs_jcam</span><span class="p">,</span> <span class="n">limb_img_points</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">plot</span><span class="p">:</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">dpi</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">frame</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;gray&#39;</span><span class="p">)</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">limbs_jcam</span><span class="p">[:,</span><span class="mi">0</span><span class="p">],</span> <span class="n">limbs_jcam</span><span class="p">[:,</span><span class="mi">1</span><span class="p">],</span> <span class="s1">&#39;r.&#39;</span><span class="p">,</span> <span class="n">markersize</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">limb_img_points</span><span class="p">[:,</span><span class="mi">0</span><span class="p">],</span> <span class="n">limb_img_points</span><span class="p">[:,</span><span class="mi">1</span><span class="p">],</span> <span class="s1">&#39;g.&#39;</span><span class="p">,</span> <span class="n">markersize</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">distances</span><span class="p">[</span><span class="n">distances</span><span class="o">&lt;</span><span class="mi">15</span><span class="p">]</span><span class="o">&gt;</span><span class="mi">5</span><span class="p">):</span>
+                <span class="n">min_dists</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">distances</span><span class="p">[</span><span class="n">distances</span><span class="o">&lt;</span><span class="mf">15.</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">min_dists</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.e10</span>
+
+            <span class="c1">#print(distances.min(), distances.max(), min_dists[j])</span>
+            <span class="c1">#plt.contour(limb_img, vmin=0.5, vmax=1.5, colors=&#39;g&#39;, linewidths=0.1)</span>
+
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">jitter</span> <span class="o">=</span> <span class="n">jitter_list</span><span class="p">[</span><span class="n">min_dists</span><span class="o">.</span><span class="n">argmin</span><span class="p">()]</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Found best jitter value of </span><span class="si">%.1f</span><span class="s2"> ms&quot;</span><span class="o">%</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">jitter</span><span class="o">*</span><span class="mf">1.e3</span><span class="p">))</span>
+        
+        <span class="n">eti</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_et</span> <span class="o">+</span> <span class="n">cami</span><span class="o">.</span><span class="n">time_bias</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">jitter</span> <span class="o">+</span> \
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">frame_delay</span><span class="o">+</span><span class="n">cami</span><span class="o">.</span><span class="n">iframe_delay</span><span class="p">)</span><span class="o">*</span><span class="n">n</span>
+
+        <span class="n">limbs_jcam</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_limb</span><span class="p">(</span><span class="n">eti</span><span class="p">,</span> <span class="n">cami</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">plot</span><span class="p">:</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">limbs_jcam</span><span class="p">[:,</span><span class="mi">0</span><span class="p">],</span> <span class="n">limbs_jcam</span><span class="p">[:,</span><span class="mi">1</span><span class="p">],</span> <span class="s1">&#39;g.&#39;</span><span class="p">,</span> <span class="n">markersize</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="Projector.get_limb"><a class="viewcode-back" href="../../projection.html#projection.projector.Projector.get_limb">[docs]</a>    <span class="k">def</span> <span class="nf">get_limb</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">eti</span><span class="p">,</span> <span class="n">cami</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            Find the limb of the planet at a given time</span>
+<span class="sd">            for a specific JunoCam filter</span>
+
+<span class="sd">            Parameters</span>
+<span class="sd">            ----------</span>
+<span class="sd">            eti : float</span>
+<span class="sd">                Spacecraft ET time for finding the limb</span>
+<span class="sd">            cami : `CameraModel`</span>
+<span class="sd">                The `CameraModel` object that holds the filter information</span>
+
+<span class="sd">            Returns</span>
+<span class="sd">            -------</span>
+<span class="sd">            limbs_jcam : `numpy.ndarray`</span>
+<span class="sd">                List of points in the `JUNO_JUNOCAM` frame that contains</span>
+<span class="sd">                the limb of the planet at the given time</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">METHOD</span> <span class="o">=</span> <span class="s1">&#39;TANGENT/ELLIPSOID&#39;</span>
+        <span class="n">CORLOC</span> <span class="o">=</span> <span class="s1">&#39;ELLIPSOID LIMB&#39;</span>
+
+        <span class="n">scloc</span><span class="p">,</span> <span class="n">lt</span> <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">spkpos</span><span class="p">(</span><span class="s1">&#39;JUNO&#39;</span><span class="p">,</span> <span class="n">eti</span><span class="p">,</span> <span class="s1">&#39;IAU_JUPITER&#39;</span><span class="p">,</span> <span class="s1">&#39;CN+S&#39;</span><span class="p">,</span> <span class="s1">&#39;JUPITER&#39;</span><span class="p">)</span>
+
+        <span class="c1"># use the sub spacecraft point as the reference vector</span>
+        <span class="n">refvec</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">subpnt</span><span class="p">(</span><span class="s1">&#39;INTERCEPT/ELLIPSOID&#39;</span><span class="p">,</span> <span class="s1">&#39;JUPITER&#39;</span><span class="p">,</span> <span class="n">eti</span><span class="p">,</span> <span class="s1">&#39;IAU_JUPITER&#39;</span><span class="p">,</span>
+                                    <span class="s1">&#39;CN+S&#39;</span><span class="p">,</span> <span class="s1">&#39;JUNO&#39;</span><span class="p">)</span>
+
+        <span class="c1">#print(np.degrees(spice.recpgr(&#39;JUPITER&#39;, scloc, self.re, self.flattening)[:2]), self.sclat, self.sclon)</span>
+
+        <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="p">,</span> <span class="n">eplimbs</span><span class="p">,</span> <span class="n">limbs_IAU</span> <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">limbpt</span><span class="p">(</span><span class="n">METHOD</span><span class="p">,</span> <span class="s1">&#39;JUPITER&#39;</span><span class="p">,</span> <span class="n">eti</span><span class="p">,</span> <span class="s1">&#39;IAU_JUPITER&#39;</span><span class="p">,</span> 
+                                      <span class="s1">&#39;CN+S&#39;</span><span class="p">,</span> <span class="n">CORLOC</span><span class="p">,</span> <span class="s1">&#39;JUNO&#39;</span><span class="p">,</span> <span class="n">refvec</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mf">0.1</span><span class="p">),</span> 
+                                      <span class="mi">3600</span><span class="p">,</span> <span class="mf">4.</span><span class="p">,</span> <span class="mf">0.001</span><span class="p">,</span> <span class="mi">7200</span><span class="p">)</span>
+
+        <span class="n">limbs_jcam</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">limbs_IAU</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">2</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">limbi</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">limbs_IAU</span><span class="p">):</span>
+            <span class="n">transform</span> <span class="o">=</span> <span class="n">spice</span><span class="o">.</span><span class="n">pxfrm2</span><span class="p">(</span><span class="s1">&#39;IAU_JUPITER&#39;</span><span class="p">,</span> <span class="s1">&#39;JUNO_JUNOCAM&#39;</span><span class="p">,</span> <span class="n">eplimbs</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">eti</span><span class="p">)</span>
+            <span class="n">veci</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">transform</span><span class="p">,</span> <span class="n">limbs_IAU</span><span class="p">[</span><span class="n">i</span><span class="p">,:])</span>
+            <span class="n">limbs_jcam</span><span class="p">[</span><span class="n">i</span><span class="p">,:]</span> <span class="o">=</span> <span class="n">cami</span><span class="o">.</span><span class="n">vec2pix</span><span class="p">(</span><span class="n">veci</span><span class="p">)</span>
+
+        <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">limbs_jcam</span><span class="p">[:,</span><span class="mi">1</span><span class="p">]</span><span class="o">&lt;</span><span class="mi">128</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">limbs_jcam</span><span class="p">[:,</span><span class="mi">1</span><span class="p">]</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">limbs_jcam</span><span class="p">[:,</span><span class="mi">0</span><span class="p">]</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">limbs_jcam</span><span class="p">[:,</span><span class="mi">0</span><span class="p">]</span><span class="o">&lt;</span><span class="mi">1648</span><span class="p">)</span>
+        <span class="n">limbs_jcam</span> <span class="o">=</span> <span class="n">limbs_jcam</span><span class="p">[</span><span class="n">mask</span><span class="p">,:]</span>
+
+        <span class="k">return</span> <span class="n">limbs_jcam</span></div>
+
+
+<div class="viewcode-block" id="Projector.process"><a class="viewcode-back" href="../../projection.html#projection.projector.Projector.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_procs</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            Main driver for the projection. Determines line of sight</span>
+<span class="sd">            intercepts for each pixel on the JunoCam image</span>
+
+<span class="sd">            Parameters</span>
+<span class="sd">            ----------</span>
+<span class="sd">            num_procs : int</span>
+<span class="sd">                Number of CPUs to use for multiprocessing [Default: 1]</span>
+<span class="sd">            jitter : float</span>
+<span class="sd">                offset in ms, to add to the start time to compensate for</span>
+<span class="sd">                jitter [Default: 0]</span>
+<span class="sd">                </span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">&quot;</span><span class="o">%</span><span class="bp">self</span><span class="o">.</span><span class="n">fname</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="n">done</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">extents</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Projecting framelets:&quot;</span><span class="p">)</span>
+        
+        <span class="n">lat</span>       <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+        <span class="n">lon</span>       <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+        <span class="n">decompimg</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+        <span class="n">rawimg</span>    <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+        <span class="n">flux_cal</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+        <span class="n">incid</span>      <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+        <span class="n">emis</span>      <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">FRAME_HEIGHT</span><span class="p">,</span> <span class="n">FRAME_WIDTH</span><span class="p">))</span>
+        <span class="n">scloc</span>     <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">et</span>        <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">)</span>
+
+        <span class="c1">## save these parameters to a NetCDF file so that we can plot it later </span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">NC_FOLDER</span><span class="p">):</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">NC_FOLDER</span><span class="p">)</span>
+
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">find_jitter</span><span class="p">(</span><span class="n">jitter_max</span><span class="o">=</span><span class="mi">40</span><span class="p">)</span>
+
+        <span class="c1">## flatfield and gain from Brian Swift&#39;s GitHub (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)</span>
+        <span class="n">flatfield</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">+</span><span class="s1">&#39;/cal/flatFieldsSmooth12to16.tiff&#39;</span><span class="p">))</span>
+        <span class="c1">#gain      = np.array(io.imread(os.path.dirname(__file__)+&#39;/cal/gainSmooth12to16.tiff&#39;))</span>
+
+        <span class="n">inpargs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">image</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fullimg</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+                <span class="n">startrow</span> <span class="o">=</span> <span class="mi">3</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span><span class="o">*</span><span class="n">i</span> <span class="o">+</span> <span class="n">j</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span>
+                <span class="n">endrow</span>   <span class="o">=</span> <span class="mi">3</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span><span class="o">*</span><span class="n">i</span> <span class="o">+</span><span class="p">(</span><span class="n">j</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span>
+                
+
+                <span class="n">framei</span> <span class="o">=</span> <span class="n">decompand</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fullimg</span><span class="p">[</span><span class="n">startrow</span><span class="p">:</span><span class="n">endrow</span><span class="p">,:])</span>
+                <span class="n">flati</span>  <span class="o">=</span> <span class="n">flatfield</span><span class="p">[</span><span class="n">j</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span><span class="p">:(</span><span class="n">j</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span><span class="p">,:]</span>
+                <span class="c1">#gaini  = gain[j*FRAME_HEIGHT:(j+1)*FRAME_HEIGHT,:]</span>
+                <span class="n">flati</span><span class="p">[</span><span class="n">flati</span><span class="o">==</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.</span>
+                <span class="n">framei</span> <span class="o">=</span> <span class="n">framei</span><span class="o">/</span><span class="n">flati</span><span class="c1">#*gaini</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">image</span><span class="p">[</span><span class="n">startrow</span><span class="p">:</span><span class="n">endrow</span><span class="p">,:]</span> <span class="o">=</span> <span class="n">framei</span>
+                <span class="c1">#framei = framei*gainSmooth12to16[j*FRAME_HEIGHT:(j+1)*FRAME_HEIGHT]</span>
+
+                <span class="n">inpargs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">))</span>
+
+        <span class="n">pixres</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">inpargs</span><span class="p">))</span>
+
+        <span class="n">pool</span> <span class="o">=</span> <span class="n">multiprocessing</span><span class="o">.</span><span class="n">Pool</span><span class="p">(</span><span class="n">processes</span><span class="o">=</span><span class="n">num_procs</span><span class="p">,</span> <span class="n">initializer</span><span class="o">=</span><span class="n">initializer</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">pool</span><span class="o">.</span><span class="n">map_async</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">process_n_c</span><span class="p">,</span> <span class="n">inpargs</span><span class="p">)</span>
+            <span class="n">pool</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+            <span class="n">tasks</span> <span class="o">=</span> <span class="n">pool</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">r</span><span class="o">.</span><span class="n">_job</span><span class="p">]</span>
+            <span class="n">ninpt</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">inpargs</span><span class="p">)</span>
+            <span class="k">while</span> <span class="n">tasks</span><span class="o">.</span><span class="n">_number_left</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">progress</span> <span class="o">=</span> <span class="p">(</span><span class="n">ninpt</span> <span class="o">-</span> <span class="n">tasks</span><span class="o">.</span><span class="n">_number_left</span><span class="o">*</span><span class="n">tasks</span><span class="o">.</span><span class="n">_chunksize</span><span class="p">)</span><span class="o">/</span><span class="n">ninpt</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\r</span><span class="s2">[</span><span class="si">%-20s</span><span class="s2">] </span><span class="si">%4.2f%%</span><span class="s2">&quot;</span><span class="o">%</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">progress</span><span class="o">*</span><span class="mi">20</span><span class="p">)</span><span class="o">*</span><span class="s1">&#39;=&#39;</span><span class="p">,</span> <span class="n">progress</span><span class="o">*</span><span class="mf">100.</span><span class="p">),</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+            <span class="n">pool</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+            <span class="n">pool</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">()</span>
+        
+        <span class="nb">print</span><span class="p">()</span>
+        <span class="n">pool</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+
+        <span class="n">results</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">jj</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">inpargs</span><span class="p">)):</span>
+            <span class="n">lati</span><span class="p">,</span> <span class="n">loni</span><span class="p">,</span> <span class="n">scloci</span><span class="p">,</span> <span class="n">eti</span><span class="p">,</span> <span class="n">pixres</span><span class="p">[</span><span class="n">jj</span><span class="p">],</span> <span class="n">mu0i</span><span class="p">,</span> <span class="n">mui</span><span class="p">,</span> <span class="n">flux_cali</span> \
+                <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="n">jj</span><span class="p">]</span>
+            <span class="n">i</span><span class="p">,</span> <span class="n">ci</span> <span class="o">=</span> <span class="n">inpargs</span><span class="p">[</span><span class="n">jj</span><span class="p">]</span>
+            <span class="n">startrow</span> <span class="o">=</span> <span class="mi">3</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span><span class="o">*</span><span class="n">i</span> <span class="o">+</span> <span class="n">ci</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span>
+            <span class="n">endrow</span>   <span class="o">=</span> <span class="mi">3</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span><span class="o">*</span><span class="n">i</span> <span class="o">+</span><span class="p">(</span><span class="n">ci</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">FRAME_HEIGHT</span>
+
+            <span class="n">lat</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">ci</span><span class="p">,:,:]</span>       <span class="o">=</span> <span class="n">lati</span>
+            <span class="n">lon</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">ci</span><span class="p">,:,:]</span>       <span class="o">=</span> <span class="n">loni</span>
+            <span class="n">decompimg</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">ci</span><span class="p">,:,:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">image</span><span class="p">[</span><span class="n">startrow</span><span class="p">:</span><span class="n">endrow</span><span class="p">,:]</span><span class="c1">#*scorri</span>
+            <span class="n">rawimg</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">ci</span><span class="p">,:,:]</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fullimg</span><span class="p">[</span><span class="n">startrow</span><span class="p">:</span><span class="n">endrow</span><span class="p">,:]</span>
+            <span class="n">incid</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">ci</span><span class="p">,:,:]</span>      <span class="o">=</span> <span class="n">mu0i</span>
+            <span class="n">emis</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">ci</span><span class="p">,:,:]</span>      <span class="o">=</span> <span class="n">mui</span>
+            <span class="n">flux_cal</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">ci</span><span class="p">,:,:]</span>  <span class="o">=</span> <span class="n">flux_cali</span>
+            <span class="n">scloc</span><span class="p">[</span><span class="n">i</span><span class="p">,:]</span>            <span class="o">=</span> <span class="n">scloci</span>
+            <span class="n">et</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>                 <span class="o">=</span> <span class="n">eti</span>
+        
+        <span class="n">pixres</span> <span class="o">=</span> <span class="n">pixres</span><span class="p">[</span><span class="n">pixres</span> <span class="o">&gt;</span> <span class="mf">0.</span><span class="p">]</span>
+
+        <span class="n">f</span> <span class="o">=</span> <span class="n">nc</span><span class="o">.</span><span class="n">Dataset</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">%s%s</span><span class="s1">.nc&#39;</span><span class="o">%</span><span class="p">(</span><span class="n">NC_FOLDER</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">fname</span><span class="p">),</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span>
+
+        <span class="n">framedim</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;nframes&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nframes</span><span class="p">)</span>
+        <span class="n">coldim</span>   <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;ncolors&#39;</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="n">xdim</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="n">FRAME_WIDTH</span><span class="p">)</span>
+        <span class="n">ydim</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="n">FRAME_HEIGHT</span><span class="p">)</span>
+        <span class="n">xyzdim</span>   <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createDimension</span><span class="p">(</span><span class="s1">&#39;xyz&#39;</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+
+        <span class="n">f</span><span class="o">.</span><span class="n">jitter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jitter</span><span class="o">*</span><span class="mf">1.e3</span>
+
+        <span class="c1">## create the NetCDF variables </span>
+        <span class="n">latVar</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;lat&#39;</span><span class="p">,</span> <span class="s1">&#39;float32&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;nframes&#39;</span><span class="p">,</span> <span class="s1">&#39;ncolors&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">lonVar</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;lon&#39;</span><span class="p">,</span> <span class="s1">&#39;float32&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;nframes&#39;</span><span class="p">,</span> <span class="s1">&#39;ncolors&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">imgVar</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;img&#39;</span><span class="p">,</span> <span class="s1">&#39;float32&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;nframes&#39;</span><span class="p">,</span> <span class="s1">&#39;ncolors&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">incVar</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;incidence&#39;</span><span class="p">,</span> <span class="s1">&#39;float32&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;nframes&#39;</span><span class="p">,</span> <span class="s1">&#39;ncolors&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">emiVar</span>     <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;emission&#39;</span><span class="p">,</span> <span class="s1">&#39;float32&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;nframes&#39;</span><span class="p">,</span> <span class="s1">&#39;ncolors&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">rawimgVar</span>  <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;rawimg&#39;</span><span class="p">,</span> <span class="s1">&#39;uint8&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;nframes&#39;</span><span class="p">,</span> <span class="s1">&#39;ncolors&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">fluximgVar</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;flux&#39;</span><span class="p">,</span> <span class="s1">&#39;float64&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;nframes&#39;</span><span class="p">,</span> <span class="s1">&#39;ncolors&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span><span class="s1">&#39;x&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">scVar</span>      <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;scloc&#39;</span><span class="p">,</span> <span class="s1">&#39;float64&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;nframes&#39;</span><span class="p">,</span><span class="s1">&#39;xyz&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">etVar</span>      <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">createVariable</span><span class="p">(</span><span class="s1">&#39;et&#39;</span><span class="p">,</span> <span class="s1">&#39;float64&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;nframes&#39;</span><span class="p">),</span> <span class="n">zlib</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">latVar</span><span class="p">[:]</span>     <span class="o">=</span> <span class="n">lat</span><span class="p">[:]</span>
+        <span class="n">lonVar</span><span class="p">[:]</span>     <span class="o">=</span> <span class="n">lon</span><span class="p">[:]</span>
+        <span class="n">imgVar</span><span class="p">[:]</span>     <span class="o">=</span> <span class="n">decompimg</span><span class="p">[:]</span>
+        <span class="n">rawimgVar</span><span class="p">[:]</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">rawimg</span><span class="p">[:]</span><span class="o">*</span><span class="mi">255</span><span class="p">,</span><span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+        <span class="n">fluximgVar</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">decompimg</span><span class="p">[:]</span><span class="o">*</span><span class="n">flux_cal</span>
+        <span class="n">scVar</span><span class="p">[:]</span>      <span class="o">=</span> <span class="n">scloc</span><span class="p">[:]</span>
+        <span class="n">etVar</span><span class="p">[:]</span>      <span class="o">=</span> <span class="n">et</span><span class="p">[:]</span>
+
+        <span class="n">incVar</span><span class="p">[:]</span>    <span class="o">=</span> <span class="n">incid</span>
+        <span class="n">emiVar</span><span class="p">[:]</span>    <span class="o">=</span> <span class="n">emis</span>
+        
+        <span class="n">f</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">lat</span><span class="o">!=-</span><span class="mf">1000.</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">lon</span><span class="o">!=-</span><span class="mf">1000.</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lonmin</span> <span class="o">=</span> <span class="n">lon</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lonmax</span> <span class="o">=</span> <span class="n">lon</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">latmin</span> <span class="o">=</span> <span class="n">lat</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">latmax</span> <span class="o">=</span> <span class="n">lat</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Extents - lon: </span><span class="si">%.3f</span><span class="s2"> </span><span class="si">%.3f</span><span class="s2"> lat: </span><span class="si">%.3f</span><span class="s2"> </span><span class="si">%.3f</span><span class="s2"> - lowest pixres: </span><span class="si">%.3f</span><span class="s2"> deg/pix&quot;</span><span class="o">%</span><span class="p">(</span>\
+                <span class="bp">self</span><span class="o">.</span><span class="n">lonmin</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lonmax</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">latmin</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">latmax</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">pixres</span><span class="p">)))</span></div></div>
+    
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2021, Ramanakumar Sankar.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
