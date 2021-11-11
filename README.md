@@ -1,4 +1,4 @@
-# Processing and projecting JunoCam images
+# Getting Started
 This is a tool to process and project JunoCam images onto a lat/lon grid. 
 
 ## Dependencies
@@ -15,6 +15,9 @@ cd projection/
 make clean
 make
 ```
+
+## Documentation
+See [junocamprojection.github.io] for more documentation. 
 
 ## Examples
 See `examples/projection.ipynb` for an example of JunoCam image projection.

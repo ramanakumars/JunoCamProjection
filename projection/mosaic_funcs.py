@@ -965,8 +965,8 @@ def get_fft(value, radius):
         Performs a FFT to convolve a Gaussian filter
         with the input image. 
 
-        Inputs
-        ------
+        Parameters
+        ----------
         value : numpy.ndarray
             The input 2D image to process
         radius : float

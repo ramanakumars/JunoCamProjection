@@ -35,7 +35,7 @@ SQROOT = np.array((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 def decompand(image):
     '''
         Decompands the image from the 8-bit in the public release
-        to the original 12-bit shot by JunoCam
+        to the original 12-bit shot by JunoCam. See https://github.com/kmgill/cassini_processing
 
         Parameters
         ----------
@@ -61,14 +61,24 @@ class Projector():
     '''
         The main projector class that determines the surface intercept points
         of each pixel in a JunoCam image
-
-        Methods
-        -------
-        load_kernels: Determines and loads the required SPICE kernels for processing
-        process_n_c : Projects an individual framelet in the JunoCam raw image
-        process     : Driver for the projection that handles parallel processing
     '''
     def __init__(self, imagefolder, meta, kerneldir='.'):
+        '''
+            Initalize the `Projector` class and set up the framelets and 
+            required SPICE kernels
+
+            Parameters
+            -----------
+            imagefolder : string
+                Path to the folder containing the `xxxx-raw.png` files 
+
+            meta : string
+                Path to the metadata JSON file
+
+            kerneldir : string
+                Path to the SPICE kernels [default: current folder]
+
+        '''
         with open(meta, 'r') as metafile:
             self.metadata = json.load(metafile)
 
@@ -112,7 +122,7 @@ class Projector():
             Parameters
             ----------
             KERNEL_DATAFOLDER : string
-                path to the location of the Juno kernels
+                path to the location of the Juno SPICE kernels
 
             Raises
             ------
@@ -294,7 +304,19 @@ class Projector():
             return
 
     def find_jitter(self, jitter_max=25, plot=False):
+        '''
+            Find the jitter in the starting time of the image
+            by fitting Jupiter's limb in the framelet
 
+            Parameters
+            ----------
+            jitter_max : float, optional
+                Maximum jitter magnitude (in ms) [Default: 25]
+            
+            plot : bool, optional
+                Flag to toggle creating a plot of the jitter search
+                [Default: False]
+        '''
         threshold = 0.1*self.fullimg.max()
 
         for nci in range(self.nframes*3):
@@ -397,6 +419,23 @@ class Projector():
             plt.show()
 
     def get_limb(self, eti, cami):
+        '''
+            Find the limb of the planet at a given time
+            for a specific JunoCam filter
+
+            Parameters
+            ----------
+            eti : float
+                Spacecraft ET time for finding the limb
+            cami : `CameraModel`
+                The `CameraModel` object that holds the filter information
+
+            Returns
+            -------
+            limbs_jcam : `numpy.ndarray`
+                List of points in the `JUNO_JUNOCAM` frame that contains
+                the limb of the planet at the given time
+        '''
         METHOD = 'TANGENT/ELLIPSOID'
         CORLOC = 'ELLIPSOID LIMB'
 

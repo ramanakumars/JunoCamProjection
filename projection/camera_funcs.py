@@ -4,8 +4,8 @@ class CameraModel():
     '''
         Holds camera distortion model and filter specific
         variables.
-        Also contains functions to obtain positions in JUNOCAM frame 
-        see: https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/ik/juno_junocam_v03.ti
+        Also contains functions to obtain positions in JUNOCAM frame.
+        See https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/ik/juno_junocam_v03.ti
     '''
     def __init__(self, filt):
         self.filter  = filt

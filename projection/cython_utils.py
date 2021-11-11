@@ -1,3 +1,7 @@
+'''
+    Contains the global Cythonized variables for use in the
+    C part of the projection pipeline. 
+'''
 import numpy as np
 import os, sys
 import ctypes, time, signal

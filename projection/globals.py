@@ -1,3 +1,8 @@
+'''
+    Contains global module imports, filter and camera IDs for SPICE
+    and global folder structure variables
+'''
+
 import matplotlib
 import os
 #matplotlib.use("Agg")
@@ -17,7 +22,7 @@ import netCDF4 as nc
 FRAME_HEIGHT = 128
 FRAME_WIDTH  = 1648
 
-## filter ids for B, G and R 
+# filter ids for B, G and R 
 FILTERS     = ['B','G','R']
 CAMERA_IDS  = [-61501, -61502, -61503]
 
@@ -25,4 +30,3 @@ NC_FOLDER  = './nc/'
 MOS_FOLDER = './mos/'
 MASK_FOLDER = './mask/'
 NPY_FOLDER = './npy/'
-

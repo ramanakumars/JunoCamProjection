@@ -8,17 +8,7 @@ Welcome to JunoCamProjection's documentation!
 
 .. toctree::
    :maxdepth: 3
-   :caption: Contents: modules
+   :caption: Contents
 
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`search`
-
-
-Projection module
-==================
-
-:py:mod:`.projection`
+   README
+   Projection module <projection.rst>

@@ -1,6 +1,8 @@
-projection package
-==================
-.. automodule:: projection
+JunoCam projection module functions
+====================================
+
+The main source for the projection and mosaicing pipelines are in the 
+`projector.py` and the `mosaic_funcs.py` files. 
 
 projection.camera\_funcs module
 -------------------------------
