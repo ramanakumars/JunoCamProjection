@@ -47,7 +47,7 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
     'sphinx.ext.githubpages',
-    'recommonmark'
+    'm2r'
 ]
 
 # napolean options
@@ -62,10 +62,7 @@ templates_path = ['_templates']
 # You can specify multiple suffix as a list of string:
 #
 # source_suffix = ['.rst', '.md']
-source_suffix = {
-    '.rst': 'restructuredtext', 
-    '.md': 'markdown'
-}
+source_suffix = ['.rst', '.md']
 
 # The master toctree document.
 master_doc = 'index'
