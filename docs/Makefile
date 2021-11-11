@@ -5,10 +5,10 @@
 SPHINXOPTS    =
 SPHINXBUILD   = sphinx-build
 SOURCEDIR     = source
-# BUILDDIR      = build
-BUILDDIR      = ../
-PDFBUILDDIR   = /tmp
-PDF           = ../doc.pdf
+BUILDDIR      = .
+# BUILDDIR      = ../
+# PDFBUILDDIR   = /tmp
+# PDF           = ../doc.pdf
 
 # Put it first so that "make" without argument is like "make help".
 help:
