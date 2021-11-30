@@ -123,7 +123,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         IMGi[np.isnan(IMGi)] = 0.
         # save the data and also get brightness information
         IMGs[i,:] = IMGi
-        Ls[i,:]   = color.rgb2lab(IMGi)[:,:,0]
+        Ls[i,:]   = color.rgb2hsv(IMGi)[:,:,2]
 
     combine_method = kwargs.get('combine_method', 'max')
 
@@ -133,9 +133,6 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         Lxx = np.gradient(Lx, axis=1)
         Lyy = np.gradient(Ly, axis=2)
         delsqL = np.abs(Lx + Ly)
-
-        for n in range(delsqL.shape[0]):
-            delsqL[n,:,:] = get_fft(delsqL[n,:,:], 500)
 
     # get the overlap area, and correct for 
     # brightness variations between overlap
@@ -207,7 +204,6 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
             ny = int(np.ceil(IMG.shape[0]/BOX_Y))
 
 
-            alpha_img = np.zeros(IMGs.shape[:-1])
             for jj in range(ny):
                 print("\r[%-20s] %d/%d"%(int(jj/ny*20.)*'=', jj+1, ny), end='')
                 starty = jj*BOX_Y
@@ -224,34 +220,26 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
                     imgs_ij  = IMGs[:,starty:endy,startx:endx]
 
                     # check if there any any images in this box
-                    mask = ~np.isnan(incem_ij)&(Ls_ij > 0.5*Ls_ij.max())&\
+                    mask = ~np.isnan(incemij)&(Ls_ij > 0.5*Ls_ij.max())&\
                         (incds_ij<np.radians(80))
-                    if np.sum(mask) > 1:
+                    if sum(mask) > 1:
                         # if there are, then assign weights (alpha) to each pixel in 
                         # each image. final image is a linear combination of images
                         # with alphas
-                        for kk in range(IMGs.shape[0]):
-                            mask = ~np.isnan(incem_ij[kk,:])&(Ls_ij[kk,:] > 0.5*Ls[kk,:].max())&\
+                        for kk in range(IMGS.shape[0]):
+                            mask = ~np.isnan(incemij[kk,:])&(Ls_ij[kk,:] > 0.5*Ls_ij.max())&\
                                 (incds_ij[kk,:]<np.radians(80))
 
-                            # weight each image by its relative brightness wrt to the 
-                            # global mean
-                            if len(Ls_ij[kk,:,:][mask]) > 0:
-                                alpha[kk,:,:][mask]  = Ls_ij[kk,:,:][mask].mean()/ave_all
-                                alpha_img[kk,starty:endy,startx:endx] = alpha[kk,:]
-                                alpha[kk,:][alpha[kk,:]!=0] = 1./alpha[kk,:][alpha[kk,:]!=0.]
+                            alpha[kk,:,:][~mask] = ave_all/Ls_ij[kk,:,:][~mask].mean()
 
-                        for c in range(3):
-                            IMGs_sub = np.multiply(imgs_ij[:,:,:,c], alpha)
-                            alpha_sum = np.sum(alpha, axis=0)
-                            alpha_sum[alpha_sum==0] = np.nan
-                            IMG[starty:endy,startx:endx,c] = np.divide(np.sum(IMGs_sub, axis=0), 
-                                                                        alpha_sum)
-                            IMG[np.isnan(IMG)] = 0.
+                        IMGs_sub = np.multiply(imgs_ij, alpha)
+                        IMG[starty:endy,startx:endx,:] = IMGs_sub
                     else:
                         continue
+                    
+                                        
 
-            np.save(NPY_FOLDER+"alpha_img.npy", alpha_img)
+
     # clean up 
     del INCDs
     del EMISs
@@ -493,8 +481,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         print("interpolating from %d x %d => %d x %d"%(nlat, nlon, latg.size, long.size))
         for ci in range(3):
             interp_function = RegularGridInterpolator((newlat, newlon), IMG[:,:,ci], bounds_error=False, fill_value=0.)
-            imgi = interp_function(newpoints).reshape((long.size, latg.size)).T
-            IMGnew[:,:,ci] = imgi
+            IMGnew[:,:,ci] = interp_function(newpoints).reshape((long.size, latg.size)).T
 
         # remove interpolation errors where one color has dark data but the
         # other don't. these needs to be large enough to ignore dark areas,
@@ -502,24 +489,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         IMGnew = IMGnew.reshape((long.size*latg.size, 3))
         IMGnew[IMGnew.min(axis=-1)<0.1,:] = 0
         IMG = IMGnew.reshape((latg.size, long.size, 3))
-        imgi = IMG.copy()
         
-        trim_size = 2
-        # trim edges from this image to avoid interpolation errors
-        for jj in range(trim_size,latg.size-trim_size):
-            print("\r[%-20s] %d/%d"%(int(jj/latg.size*20)*'=', jj, latg.size), end='')
-            for ii in range(trim_size, long.size-trim_size):
-                if IMG[jj,ii,:].mean() == 0:
-                    continue
-                # get the window around this pixel
-                img_sub = IMG[(jj-trim_size):(jj+trim_size),(ii-trim_size):(ii+trim_size),:]
-
-                # if there is an edge in this image (given by a 0 value)
-                # set the pixel value to 0
-                if img_sub.mean(axis=-1).min() < 0.1:
-                    imgi[jj,ii,:] = 0.
-
-        IMG = imgi.copy()
 
         # interpolate the other variables
         interp_function = RegularGridInterpolator((newlat, newlon), INCL, bounds_error=False, fill_value=np.nan)
@@ -1004,8 +974,6 @@ def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7, trim_thresh
 
         data = data/data.max()
 
-    data = np.roll(data, (-dshift[0], -dshift[1]), axis=(0,1))
-
     # Create a mask to trim the edges
     picmask = np.zeros_like(data[:,:,0])
 
@@ -1029,7 +997,7 @@ def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7, trim_thresh
     datanew  = IMGf.reshape(IMG.shape)
     
     # Obtain the new image and transform it back to the original axis
-    IMG = invfunc(datanew)*scale
+    IMG = invfunc(np.roll(datanew, (-dshift[0], -dshift[1]), axis=(0,1)))*scale
     return IMG
 
 def get_fft(value, radius):

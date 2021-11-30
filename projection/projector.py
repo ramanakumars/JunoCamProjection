@@ -84,6 +84,9 @@ class Projector():
 
         self.sclat = float(self.metadata['SUB_SPACECRAFT_LATITUDE'])
         self.sclon = float(self.metadata['SUB_SPACECRAFT_LONGITUDE'])
+        
+        # get the exposure and convert to seconds
+        self.exposure = float(self.metadata['EXPOSURE_DURATION'].replace('<ms>','').strip())/1.e3
 
         self.frame_delay = float(intframe_delay[0]) 
 
@@ -479,7 +482,7 @@ class Projector():
                 #gaini  = gain[j*FRAME_HEIGHT:(j+1)*FRAME_HEIGHT,:]
                 flati[flati==0] = 1.
                 framei = framei/flati#*gaini
-                self.image[startrow:endrow,:] = framei
+                self.image[startrow:endrow,:] = framei/self.exposure
                 #framei = framei*gainSmooth12to16[j*FRAME_HEIGHT:(j+1)*FRAME_HEIGHT]
 
                 inpargs.append((i,j))
@@ -517,11 +520,11 @@ class Projector():
             lon[i,ci,:,:]       = loni
             decompimg[i,ci,:,:] = self.image[startrow:endrow,:]#*scorri
             rawimg[i,ci,:,:]    = self.fullimg[startrow:endrow,:]
-            incid[i,ci,:,:]      = mu0i
+            incid[i,ci,:,:]     = mu0i
             emis[i,ci,:,:]      = mui
             flux_cal[i,ci,:,:]  = flux_cali
-            scloc[i,:]            = scloci
-            et[i]                 = eti
+            scloc[i,:]          = scloci
+            et[i]               = eti
         
         pixres = pixres[pixres > 0.]
 
