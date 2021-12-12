@@ -14,6 +14,13 @@ shared_LAT = None
 shared_IMG = None
 nlon       = 0
 nlat       = 0
+nfiles     = 0
+
+shared_IMGs  = None
+shared_Ls    = None
+shared_INCDs = None
+shared_incem = None
+ave_Ls       = 0.
 
 def initializer():
     """Ignore CTRL+C in the worker process."""
@@ -252,8 +259,6 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
                             IMG[np.isnan(IMG)] = 0.
                     else:
                         continue
-
-            np.save(NPY_FOLDER+"alpha_img.npy", alpha_img)
     # clean up 
     del INCDs
     del EMISs
@@ -1086,3 +1091,126 @@ def get_fft(value, radius):
     ifft2 = np.clip(ifft1, 0.05, 1)
 
     return ifft2
+
+def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
+    global shared_IMGs, shared_Ls, shared_INCDs, shared_incem, shared_IMG, \
+        nfiles, nlon, nlat, ave_Ls
+    nx = int(np.ceil(IMGs.shape[2]/BOX_X))
+    ny = int(np.ceil(IMGs.shape[1]/BOX_Y))
+
+
+    inpargs = []
+    
+    nfiles = IMGs.shape[0]
+    nlat   = IMGs.shape[1]
+    nlon   = IMGs.shape[2]
+    ave_Ls = ave_all
+    
+    ## build the inputs to the multiprocessing pipeline
+    ## this will decompose the imgs into (BOX_Y, BOX_X) slices
+    for jj in range(ny):
+        starty = jj*BOX_Y
+        endy   = min([nlat, (jj+1)*BOX_Y])
+        for ii in range(nx):
+            startx  = ii*BOX_X
+            endx    = min([nlon, (ii+1)*BOX_X])
+           
+            #inpargs.append([startxind,endxind,startyind,endyind, maski])
+            inpargs.append([startx,endx,starty,endy])
+    print(len(inpargs))
+    ## create the final image array
+    ## this will be stored as a shared array so each process 
+    ## can write to it
+    t0 = time.process_time()
+    cdtype = np.ctypeslib.as_ctypes_type(np.dtype(float))
+    IMGs_ctypes  = np.ctypeslib.as_ctypes(IMGs)
+    shared_IMGs  = sct.RawArray(IMGs_ctypes._type_, IMGs_ctypes)
+    Ls_ctypes    = np.ctypeslib.as_ctypes(Ls)
+    shared_Ls    = sct.RawArray(Ls_ctypes._type_, Ls_ctypes)
+    INCDs_ctypes = np.ctypeslib.as_ctypes(INCDs)
+    shared_INCDs = sct.RawArray(INCDs_ctypes._type_, INCDs_ctypes)
+    incem_ctypes = np.ctypeslib.as_ctypes(incem)
+    shared_incem = sct.RawArray(incem_ctypes._type_, incem_ctypes)
+    
+    
+    cdtype = np.ctypeslib.as_ctypes_type(np.dtype(float))
+    shared_IMG = multiprocessing.RawArray(cdtype, nlat*nlon*3)
+    print(time.process_time() - t0, flush=True)
+
+    ## start the pool
+    pool = multiprocessing.Pool(processes=num_procs, initializer=initializer)
+    try:
+        ## start the multicore grid processing
+        r = pool.map_async(do_average_box, inpargs)
+        pool.close()
+
+        tasks = pool._cache[r._job]
+        ninpt = len(inpargs)
+        while tasks._number_left > 0:
+            progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
+            if os.environ.get('NO_VERBOSE') is None:
+                print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='', flush=True)
+            time.sleep(0.05)
+    except Exception as e:
+        pool.terminate()
+        pool.join()
+        raise e
+        sys.exit()
+
+    IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat,nlon, 3))
+    IMG[np.isnan(IMG)] = 0.
+    return IMG
+
+def do_average_box(inp):
+    global shared_IMGs, shared_Ls, shared_INCDs, shared_incem, shared_IMG, \
+        nfiles, nlon, nlat, ave_Ls
+
+    startx, endx, starty, endy = inp
+
+    IMGs   = np.asarray(shared_IMGs, dtype=float).reshape((nfiles, nlat, nlon, 3))
+    INCDs  = np.asarray(shared_INCDs, dtype=float).reshape((nfiles, nlat, nlon))
+    Ls     = np.asarray(shared_Ls, dtype=float).reshape((nfiles, nlat, nlon))
+    incem  = np.asarray(shared_incem, dtype=float).reshape((nfiles, nlat, nlon))
+    
+    IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat, nlon, 3))
+
+    ave_all = ave_Ls
+
+    try:
+
+        alpha = np.zeros((nfiles, BOX_Y, BOX_X))
+        # get the images in this box
+        incem_ij = incem[:,starty:endy,startx:endx]
+        incds_ij = INCDs[:,starty:endy,startx:endx]
+        Ls_ij    = Ls[:,starty:endy,startx:endx]
+        imgs_ij  = IMGs[:,starty:endy,startx:endx]
+        
+        # check if there any any images in this box
+        mask = ~np.isnan(incem_ij)&(Ls_ij > 0.5*Ls_ij.max())&\
+            (incds_ij<np.radians(80))
+
+        
+        imgi = np.zeros(imgs_ij.shape[1:])
+        if np.sum(mask) > 1:
+            # if there are, then assign weights (alpha) to each pixel in 
+            # each image. final image is a linear combination of images
+            # with alphas
+            for kk in range(IMGs.shape[0]):
+                mask = ~np.isnan(incem_ij[kk,:])&(Ls_ij[kk,:] > 0.5*Ls[kk,:].max())&\
+                    (incds_ij[kk,:]<np.radians(80))
+
+                # weight each image by its relative brightness wrt to the 
+                # global mean
+                if len(Ls_ij[kk,:,:][mask]) > 0:
+                    alpha[kk,:,:][mask]  = Ls_ij[kk,:,:][mask].mean()/ave_all
+                    alpha[kk,:][alpha[kk,:]!=0] = 1./alpha[kk,:][alpha[kk,:]!=0.]
+
+            for c in range(3):
+                IMGs_sub = imgs_ij[:,:,:,c]*alpha
+                alpha_sum = np.sum(alpha, axis=0)
+                alpha_sum[alpha_sum==0] = np.nan
+                IMG[starty:endy,startx:endx,c] = np.sum(IMGs_sub, axis=0)/alpha_sum
+    except Exception as e:
+        raise e
+
+    return 0
