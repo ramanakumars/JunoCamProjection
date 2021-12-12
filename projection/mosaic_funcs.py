@@ -90,7 +90,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     else:
         lonmin, lonmax, latmin, latmax = extents
 
-    print("Extents - lon: %.3f %.3f  lat: %.3f %.3f"%(lonmin, lonmax, latmin, latmax))
+    print("Extents - lon: %.3f %.3f  lat: %.3f %.3f"%(lonmin, lonmax, latmin, latmax), flush=True)
     lats = None
     lons = None
     incs = None
@@ -111,7 +111,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     INCDs = np.zeros((len(files), nlat, nlon), dtype='float')
     EMISs = np.zeros((len(files), nlat, nlon), dtype='float')
 
-    print("Mosaic shape: %d x %d"%(nlon, nlat))
+    print("Mosaic shape: %d x %d"%(nlon, nlat), flush=True)
 
     for i, file in enumerate(files):
         # generate the projection of each image in the mosaic
@@ -124,6 +124,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         # save the data and also get brightness information
         IMGs[i,:] = IMGi
         Ls[i,:]   = color.rgb2lab(IMGi)[:,:,0]
+        sys.stdout.flush()
 
     combine_method = kwargs.get('combine_method', 'max')
 
@@ -163,7 +164,8 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     del overlap_mask
     del ave_val
     del npix
-
+    
+    sys.stdout.flush()
 
     if combine_method=='max':
         combine = np.max
@@ -180,12 +182,14 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         # remove regions of low lighting (even after 
         # lighting correction)
         incem[IMGs.sum(axis=-1)<0.02] = np.nan
-        print("Mosaicing image")
+        print("Mosaicing image", flush=True)
 
         # loop through every pixel and find the best value to assign to the mosaic
         if combine_method!='box_average':
             for jj in range(IMG.shape[0]):
-                print("\r[%-20s] %d/%d"%(int(jj/IMG.shape[0]*20.)*'=', jj+1, IMG.shape[0]), end='')
+                if jj%100==0:
+                    print("\r[%-20s] %d/%d"%(int(jj/IMG.shape[0]*20.)*'=', jj+1, IMG.shape[0]), 
+                          end='', flush=True)
                 for ii in range(IMG.shape[1]):
                     incemij = incem[:,jj,ii]
                     
@@ -206,10 +210,9 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
             nx = int(np.ceil(IMG.shape[1]/BOX_X))
             ny = int(np.ceil(IMG.shape[0]/BOX_Y))
 
-
-            alpha_img = np.zeros(IMGs.shape[:-1])
             for jj in range(ny):
-                print("\r[%-20s] %d/%d"%(int(jj/ny*20.)*'=', jj+1, ny), end='')
+                if jj%100==0:
+                    print("\r[%-20s] %d/%d"%(int(jj/ny*20.)*'=', jj+1, ny), end='', flush=True)
                 starty = jj*BOX_Y
                 endy   = min([IMG.shape[0], (jj+1)*BOX_Y])
                 for ii in range(nx):
@@ -238,7 +241,6 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
                             # global mean
                             if len(Ls_ij[kk,:,:][mask]) > 0:
                                 alpha[kk,:,:][mask]  = Ls_ij[kk,:,:][mask].mean()/ave_all
-                                alpha_img[kk,starty:endy,startx:endx] = alpha[kk,:]
                                 alpha[kk,:][alpha[kk,:]!=0] = 1./alpha[kk,:][alpha[kk,:]!=0.]
 
                         for c in range(3):
@@ -446,7 +448,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         maski[IMGI<0.001] = 0
         IMG[:,:,ci]  = IMGI
 
-    INCL, EMIS = get_emis_incid_map(incid, emis, lats, lons, \
+    INCD, EMIS = get_emis_incid_map(incid, emis, lats, lons, \
                                    newlat, newlon, maski, fname, \
                                    num_procs=num_procs,\
                                    load=load)
@@ -459,7 +461,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
     
     ## Do a simple Lambertian correction if needed
     if 'simple' in scorr_method:
-        mu0 = np.clip(np.cos(INCL), 0, 1)
+        mu0 = np.clip(np.cos(INCD), 0, 1)
         mu0[mu0<0.01] = np.nan
         scorr = mu0#2.*mu0/(mu0 + mu)
         for ci in range(3):
@@ -467,7 +469,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
 
 
     if 'poly' in scorr_method:
-        IMG = scorr_poly(INCL, EMIS, newlat, newlon, IMG)
+        IMG = scorr_poly(INCD, EMIS, newlat, newlon, IMG)
 
     # with both the poly and simple corrections,
     # bad incidence values are treated as NaNs. 
@@ -492,7 +494,8 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         newpoints = np.stack((LATG.flatten(), LONG.flatten()), axis=1).reshape(-1, 2)
         print("interpolating from %d x %d => %d x %d"%(nlat, nlon, latg.size, long.size))
         for ci in range(3):
-            interp_function = RegularGridInterpolator((newlat, newlon), IMG[:,:,ci], bounds_error=False, fill_value=0.)
+            interp_function = RegularGridInterpolator((newlat, newlon), IMG[:,:,ci], 
+                                                      bounds_error=False, fill_value=0.)
             imgi = interp_function(newpoints).reshape((long.size, latg.size)).T
             IMGnew[:,:,ci] = imgi
 
@@ -507,7 +510,11 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         trim_size = 2
         # trim edges from this image to avoid interpolation errors
         for jj in range(trim_size,latg.size-trim_size):
-            print("\r[%-20s] %d/%d"%(int(jj/latg.size*20)*'=', jj, latg.size), end='')
+            if os.environ.get('NO_VERBOSE') is None:
+                print("\r[%-20s] %d/%d"%(int(jj/latg.size*20)*'=', jj, latg.size), end='')
+            # ignore if this column has no data (speeds up trim computation)
+            if IMG[jj,:,:].max()==0:
+                continue
             for ii in range(trim_size, long.size-trim_size):
                 if IMG[jj,ii,:].mean() == 0:
                     continue
@@ -522,11 +529,14 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         IMG = imgi.copy()
 
         # interpolate the other variables
-        interp_function = RegularGridInterpolator((newlat, newlon), INCL, bounds_error=False, fill_value=np.nan)
-        INCL = interp_function(newpoints).reshape((long.size, latg.size)).T
-        interp_function = RegularGridInterpolator((newlat, newlon), EMIS, bounds_error=False, fill_value=np.nan)
+        interp_function = RegularGridInterpolator((newlat, newlon), INCD, 
+                                                  bounds_error=False, fill_value=np.nan)
+        INCD = interp_function(newpoints).reshape((long.size, latg.size)).T
+        interp_function = RegularGridInterpolator((newlat, newlon), EMIS,
+                                                  bounds_error=False, fill_value=np.nan)
         EMIS = interp_function(newpoints).reshape((long.size, latg.size)).T
-        interp_function = RegularGridInterpolator((newlat, newlon), maski, bounds_error=False, fill_value=0.)
+        interp_function = RegularGridInterpolator((newlat, newlon), maski,
+                                                  bounds_error=False, fill_value=0.)
         maski = interp_function(newpoints).reshape((long.size, latg.size)).T
 
         # update the lat/lon info for output
@@ -558,13 +568,18 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         
         img_corrVar = f.createVariable('img_corr', 'uint8', ('y','x','colors'), zlib=True)
 
+        incdVar = f.createVariable('incd', 'float64', ('y', 'x'), zlib=True)
+        emisVar = f.createVariable('emis', 'float64', ('y', 'x'), zlib=True)
+
         latVar[:]  = newlat[:]
         lonVar[:]  = newlon[:]
         imgVar[:]  = IMG[:]
+        incdVar[:]  = INCD[:]
+        emisVar[:]  = EMIS[:]
         img_corrVar[:] = np.asarray(IMGc*255/IMG.max(), dtype=np.uint8)
 
     if ret_inc:
-        return "%s_proj.nc"%fname, IMG, maski, INCL, EMIS
+        return "%s_proj.nc"%fname, IMG, maski, INCD, EMIS
     else:
         return "%s_proj.nc"%fname, IMG, maski
 
@@ -839,8 +854,6 @@ def get_emis_incid_map(incid, emis, lat, lon, newlat, newlon, maski, \
     ## create the new grid to project onto and
     ## project the incidence and emission values onto the new grid
     LAT, LON = np.meshgrid(newlat, newlon)
-    #EMIS = griddata((lonf, latf), emisf, (LON, LAT)).T
-    #INCL = griddata((lonf, latf), inclsf, (LON, LAT)).T
 
     if load&os.path.exists(NPY_FOLDER+"%s_emis.npy"%fname):
         print("Loading emission data")
@@ -853,16 +866,16 @@ def get_emis_incid_map(incid, emis, lat, lon, newlat, newlon, maski, \
     
     if load&os.path.exists(NPY_FOLDER+"%s_incid.npy"%fname):
         print("Loading incidence data")
-        INCL = np.load(NPY_FOLDER+"%s_incid.npy"%fname)
+        INCD = np.load(NPY_FOLDER+"%s_incid.npy"%fname)
     else:
         print("Processing incidence angles")
-        INCL = project_to_uniform_grid(lonf, latf, incidsf, num_procs=num_procs)
-        INCL[~maski] = np.nan
-        np.save(NPY_FOLDER+"%s_incid.npy"%fname, INCL)
+        INCD = project_to_uniform_grid(lonf, latf, incidsf, num_procs=num_procs)
+        INCD[~maski] = np.nan
+        np.save(NPY_FOLDER+"%s_incid.npy"%fname, INCD)
 
-    return (INCL, EMIS)
+    return (INCD, EMIS)
 
-def scorr_poly(INCL, EMIS, newlat, newlon, IMG):
+def scorr_poly(INCD, EMIS, newlat, newlon, IMG):
     '''
         Fit a 2nd order polynomial in incidence/emission space
         to correct for lighting geometry
@@ -870,7 +883,7 @@ def scorr_poly(INCL, EMIS, newlat, newlon, IMG):
     print("Doing polynomial lighting correction")
 
 
-    mask = (~np.isnan(EMIS))&(~np.isnan(INCL))&(IMG.min(axis=2)>0.)
+    mask = (~np.isnan(EMIS))&(~np.isnan(INCD))&(IMG.min(axis=2)>0.)
 
     ## get the brightness value of the pixels
     HSV = color.rgb2hsv(IMG/IMG.max())
@@ -879,25 +892,25 @@ def scorr_poly(INCL, EMIS, newlat, newlon, IMG):
     #IMG_val = IMG[:,:,1]
 
     
-    INCLf = np.cos(INCL[mask].flatten())
+    INCDf = np.cos(INCD[mask].flatten())
     EMISf = np.cos(EMIS[mask].flatten())
     VALf  = IMG_val[mask].flatten()
 
     ## remove boundary data
-    mask = (INCLf>0.05)
-    INCLf = INCLf[mask]
+    mask = (INCDf>0.05)
+    INCDf = INCDf[mask]
     EMISf = EMISf[mask]
     VALf  = VALf[mask]
 
-    ind = np.asarray(range(len(INCLf)))
+    ind = np.asarray(range(len(INCDf)))
     np.random.shuffle(ind)
     ind = ind[:1000]
 
-    INCLf = INCLf[ind]; EMISf = EMISf[ind]; VALf = VALf[ind]
+    INCDf = INCDf[ind]; EMISf = EMISf[ind]; VALf = VALf[ind]
 
     # create the two axis (x is mu, y is mu0)
-    x  = INCLf; y = EMISf
-    xx = np.cos(INCL); yy = np.cos(EMIS)
+    x  = INCDf; y = EMISf
+    xx = np.cos(INCD); yy = np.cos(EMIS)
 
     m = 5 ## polynomial order
     A = []
@@ -910,7 +923,7 @@ def scorr_poly(INCL, EMIS, newlat, newlon, IMG):
     coeff, r, rank, s = np.linalg.lstsq(A, VALf, rcond=None)
 
     # create the correction from the new polynomial
-    SCORR = np.zeros_like(INCL)
+    SCORR = np.zeros_like(INCD)
     k = 0
     for i in range(m):
         for j in range(i):
