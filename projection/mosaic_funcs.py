@@ -130,7 +130,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         IMGi[np.isnan(IMGi)] = 0.
         # save the data and also get brightness information
         IMGs[i,:] = IMGi
-        Ls[i,:]   = color.rgb2lab(IMGi)[:,:,0]
+        Ls[i,:]   = color.rgb2hsv(IMGi)[:,:,2]
         sys.stdout.flush()
 
     combine_method = kwargs.get('combine_method', 'max')
@@ -166,6 +166,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     # regions have the same brightness
     for i in range(len(files)):
         IMGs[i,:] *= ave_all/ave_val[i]
+        Ls[i,:]    = color.rgb2hsv(IMGs[i,:])[:,:,2]
     
     # clear the memory 
     del overlap_mask
@@ -192,7 +193,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         print("Mosaicing image", flush=True)
 
         # loop through every pixel and find the best value to assign to the mosaic
-        if combine_method!='box_average':
+        if combine_method in ['min', 'max']:
             for jj in range(IMG.shape[0]):
                 if jj%100==0:
                     print("\r[%-20s] %d/%d"%(int(jj/IMG.shape[0]*20.)*'=', jj+1, IMG.shape[0]), 
@@ -213,7 +214,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
                             IMG[jj,ii,:] = combine(IMGs[mask,jj,ii,:], axis=0)
                     elif nimgs > 0:
                         IMG[jj,ii,:] = IMGs[mask,jj,ii,:]
-        else:
+        elif combine_method=='box_average_old':
             nx = int(np.ceil(IMG.shape[1]/BOX_X))
             ny = int(np.ceil(IMG.shape[0]/BOX_Y))
 
@@ -259,6 +260,8 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
                             IMG[np.isnan(IMG)] = 0.
                     else:
                         continue
+        else:
+            IMG = box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=num_procs)
     # clean up 
     del INCDs
     del EMISs
@@ -497,7 +500,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         IMGnew = np.zeros((latg.size, long.size, 3))
         LATG, LONG = np.meshgrid(latg, long)
         newpoints = np.stack((LATG.flatten(), LONG.flatten()), axis=1).reshape(-1, 2)
-        print("interpolating from %d x %d => %d x %d"%(nlat, nlon, latg.size, long.size))
+        print("Interpolating from %d x %d => %d x %d"%(nlat, nlon, latg.size, long.size))
         for ci in range(3):
             interp_function = RegularGridInterpolator((newlat, newlon), IMG[:,:,ci], 
                                                       bounds_error=False, fill_value=0.)
@@ -516,7 +519,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         # trim edges from this image to avoid interpolation errors
         for jj in range(trim_size,latg.size-trim_size):
             if os.environ.get('NO_VERBOSE') is None:
-                print("\r[%-20s] %d/%d"%(int(jj/latg.size*20)*'=', jj, latg.size), end='')
+                print("\rTrimming: [%-20s] %d/%d"%(int(jj/latg.size*20)*'=', jj, latg.size), end='')
             # ignore if this column has no data (speeds up trim computation)
             if IMG[jj,:,:].max()==0:
                 continue
@@ -530,6 +533,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
                 # set the pixel value to 0
                 if img_sub.mean(axis=-1).min() < 0.1:
                     imgi[jj,ii,:] = 0.
+        print()
 
         IMG = imgi.copy()
 
@@ -1179,6 +1183,8 @@ def do_average_box(inp):
     
     IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat, nlon, 3))
 
+    Lsmax = np.max(Ls, axis=(1,2))
+
     ave_all = ave_Ls
 
     try:
@@ -1194,14 +1200,12 @@ def do_average_box(inp):
         mask = ~np.isnan(incem_ij)&(Ls_ij > 0.5*Ls_ij.max())&\
             (incds_ij<np.radians(80))
 
-        
-        imgi = np.zeros(imgs_ij.shape[1:])
         if np.sum(mask) > 1:
             # if there are, then assign weights (alpha) to each pixel in 
             # each image. final image is a linear combination of images
             # with alphas
             for kk in range(IMGs.shape[0]):
-                mask = ~np.isnan(incem_ij[kk,:])&(Ls_ij[kk,:] > 0.5*Ls[kk,:].max())&\
+                mask = ~np.isnan(incem_ij[kk,:])&(Ls_ij[kk,:] > 0.5*Lsmax[kk])&\
                     (incds_ij[kk,:]<np.radians(80))
 
                 # weight each image by its relative brightness wrt to the 
@@ -1214,7 +1218,7 @@ def do_average_box(inp):
                 IMGs_sub = imgs_ij[:,:,:,c]*alpha
                 alpha_sum = np.sum(alpha, axis=0)
                 alpha_sum[alpha_sum==0] = np.nan
-                IMG[starty:endy,startx:endx,c] = np.sum(IMGs_sub, axis=0)/alpha_sum
+                IMG[starty:endy,startx:endx,c] = np.divide(np.sum(IMGs_sub, axis=0), alpha_sum)
     except Exception as e:
         raise e
 
