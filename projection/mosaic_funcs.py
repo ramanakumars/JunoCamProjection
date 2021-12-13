@@ -1146,10 +1146,15 @@ def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
 
         tasks = pool._cache[r._job]
         ninpt = len(inpargs)
+        last_update = tasks._number_left
+        print("starting...")
         while tasks._number_left > 0:
             progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
-            if os.environ.get('NO_VERBOSE') is None:
-                print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='', flush=True)
+            # print a progress when the number of tasks has been updated
+            if progress!=last_update:
+                print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
+                sys.stdout.flush()
+                last_update = progress
             time.sleep(0.05)
     except Exception as e:
         pool.terminate()
