@@ -112,11 +112,11 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     nlon = newlon.size 
     
     # create the arrays to hold the intermediary data
-    IMG   = np.zeros((nlat, nlon, 3), dtype='float')
+    IMG   = np.zeros((nlat, nlon, 3), dtype=np.float32)
     IMGs  = np.zeros((len(files), nlat, nlon, 3), dtype=np.float32)
-    Ls    = np.zeros((len(files), nlat, nlon), dtype='float')
-    INCDs = np.zeros((len(files), nlat, nlon), dtype='float')
-    EMISs = np.zeros((len(files), nlat, nlon), dtype='float')
+    Ls    = np.zeros((len(files), nlat, nlon), dtype=np.float32)
+    INCDs = np.zeros((len(files), nlat, nlon), dtype=np.float32)
+    EMISs = np.zeros((len(files), nlat, nlon), dtype=np.float32)
 
     print("Mosaic shape: %d x %d"%(nlon, nlat), flush=True)
 
@@ -132,6 +132,9 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         IMGs[i,:] = IMGi
         Ls[i,:]   = color.rgb2hsv(IMGi)[:,:,2]
         sys.stdout.flush()
+
+    del IMGi
+    gc.collect()
 
     combine_method = kwargs.get('combine_method', 'max')
 
@@ -172,7 +175,8 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     del overlap_mask
     del ave_val
     del npix
-    
+    gc.collect()
+
     sys.stdout.flush()
 
     if combine_method=='max':
@@ -577,8 +581,8 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         
         img_corrVar = f.createVariable('img_corr', 'uint8', ('y','x','colors'), zlib=True)
 
-        incdVar = f.createVariable('incd', 'float64', ('y', 'x'), zlib=True)
-        emisVar = f.createVariable('emis', 'float64', ('y', 'x'), zlib=True)
+        incdVar = f.createVariable('incd', 'float32', ('y', 'x'), zlib=True)
+        emisVar = f.createVariable('emis', 'float32', ('y', 'x'), zlib=True)
 
         latVar[:]  = newlat[:]
         lonVar[:]  = newlon[:]
@@ -1126,7 +1130,6 @@ def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
     ## this will be stored as a shared array so each process 
     ## can write to it
     t0 = time.process_time()
-    cdtype = np.ctypeslib.as_ctypes_type(np.dtype(float))
     IMGs_ctypes  = np.ctypeslib.as_ctypes(IMGs)
     shared_IMGs  = sct.RawArray(IMGs_ctypes._type_, IMGs_ctypes)
     Ls_ctypes    = np.ctypeslib.as_ctypes(Ls)
@@ -1135,7 +1138,6 @@ def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
     shared_INCDs = sct.RawArray(INCDs_ctypes._type_, INCDs_ctypes)
     incem_ctypes = np.ctypeslib.as_ctypes(incem)
     shared_incem = sct.RawArray(incem_ctypes._type_, incem_ctypes)
-    
     
     cdtype = np.ctypeslib.as_ctypes_type(np.dtype(float))
     shared_IMG = multiprocessing.RawArray(cdtype, nlat*nlon*3)
@@ -1176,10 +1178,10 @@ def do_average_box(inp):
 
     startx, endx, starty, endy = inp
 
-    IMGs   = np.asarray(shared_IMGs, dtype=float).reshape((nfiles, nlat, nlon, 3))
-    INCDs  = np.asarray(shared_INCDs, dtype=float).reshape((nfiles, nlat, nlon))
-    Ls     = np.asarray(shared_Ls, dtype=float).reshape((nfiles, nlat, nlon))
-    incem  = np.asarray(shared_incem, dtype=float).reshape((nfiles, nlat, nlon))
+    IMGs   = np.asarray(shared_IMGs, dtype=np.float32).reshape((nfiles, nlat, nlon, 3))
+    INCDs  = np.asarray(shared_INCDs, dtype=np.float32).reshape((nfiles, nlat, nlon))
+    Ls     = np.asarray(shared_Ls, dtype=np.float32).reshape((nfiles, nlat, nlon))
+    incem  = np.asarray(shared_incem, dtype=np.float32).reshape((nfiles, nlat, nlon))
     
     IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat, nlon, 3))
 
@@ -1197,7 +1199,7 @@ def do_average_box(inp):
         imgs_ij  = IMGs[:,starty:endy,startx:endx]
         
         # check if there any any images in this box
-        mask = ~np.isnan(incem_ij)&(Ls_ij > 0.5*Ls_ij.max())&\
+        mask = ~np.isnan(incem_ij)&(Ls_ij > 0.2*Ls_ij.max())&\
             (incds_ij<np.radians(80))
 
         if np.sum(mask) > 1:
@@ -1205,7 +1207,7 @@ def do_average_box(inp):
             # each image. final image is a linear combination of images
             # with alphas
             for kk in range(IMGs.shape[0]):
-                mask = ~np.isnan(incem_ij[kk,:])&(Ls_ij[kk,:] > 0.5*Lsmax[kk])&\
+                mask = ~np.isnan(incem_ij[kk,:])&(Ls_ij[kk,:] > 0.2*Lsmax[kk])&\
                     (incds_ij[kk,:]<np.radians(80))
 
                 # weight each image by its relative brightness wrt to the 

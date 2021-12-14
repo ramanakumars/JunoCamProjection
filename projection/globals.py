@@ -1,5 +1,6 @@
 import matplotlib
 import os
+import gc
 #matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp2d, griddata
