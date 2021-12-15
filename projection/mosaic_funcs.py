@@ -3,8 +3,8 @@ from .camera_funcs import *
 NLAT_SLICE  = 20
 NLON_SLICE  = 20
 
-BOX_X = 20
-BOX_Y = 20
+BOX_X = 50
+BOX_Y = 50
 
 shared_lat = None
 shared_lon = None
@@ -26,7 +26,7 @@ def initializer():
     """Ignore CTRL+C in the worker process."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
+def map_project_multi(files, outfile='multi_proj_raw.nc', pixres=1./25., num_procs=1, extents=None, \
                       scorr_method='fft', load=False, **kwargs):
     '''
         Project multiple images into one mosaic. Use `scorr_method` to 
@@ -124,19 +124,21 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         # generate the projection of each image in the mosaic
         fname = files[i][:-3]
         _, IMGi, _, INCDs[i,:], EMISs[i,:] = map_project(file, pixres=pixres, long=newlon, latg=newlat,
-                        save=True, savemask=True, num_procs=num_procs, interp_loaded_grid=True,
+                        save=True, savemask=False, num_procs=num_procs, interp_loaded_grid=True,
                         scorr_method=scorr_method, load=load, ret_inc=True, **kwargs)
 
         IMGi[np.isnan(IMGi)] = 0.
-        # save the data and also get brightness information
+        # get brightness information
         IMGs[i,:] = IMGi
         Ls[i,:]   = color.rgb2hsv(IMGi)[:,:,2]
+
+        # flush out any progress bars
         sys.stdout.flush()
 
     del IMGi
     gc.collect()
 
-    combine_method = kwargs.get('combine_method', 'max')
+    combine_method = kwargs.get('combine_method', 'box_average')
 
     # experimental method (not recommended)
     if combine_method=='min_grad':
@@ -151,7 +153,7 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     # get the overlap area, and correct for 
     # brightness variations between overlap
     # regions in different images
-    npix    = np.sum(Ls>0.005*Ls.max(), axis=0)
+    npix    = np.sum(Ls>0.05, axis=0)
     overlap_mask = npix>1
 
     # get the average value of the overlap
@@ -269,9 +271,10 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
     # clean up 
     del INCDs
     del EMISs
+    gc.collect()
 
     # save these parameters to a NetCDF file so that we can plot it later 
-    with nc.Dataset(NC_FOLDER+'multi_proj_raw.nc', 'w') as f:
+    with nc.Dataset(NC_FOLDER+outfile, 'w') as f:
         xdim     = f.createDimension('x',nlon)
         ydim     = f.createDimension('y',nlat)
         colors   = f.createDimension('colors',3)
@@ -281,16 +284,10 @@ def map_project_multi(files, pixres=1./25., num_procs=1, extents=None, \
         latVar   = f.createVariable('lat', 'float64', ('y'), zlib=True)
         lonVar   = f.createVariable('lon', 'float64', ('x'), zlib=True)
         imgVar   = f.createVariable('img', 'float64', ('y','x','colors'), zlib=True)
-        imgsVar  = f.createVariable('imgs', 'float32', ('file', 'y','x','colors'), zlib=True)
-        if incem is not None:
-            incemVar = f.createVariable('incem', 'float64', ('file', 'y','x'), zlib=True)
 
         latVar[:]  = newlat[:]
         lonVar[:]  = newlon[:]
         imgVar[:]  = IMG[:]
-        imgsVar[:] = IMGs[:]
-        if incem is not None:
-            incemVar[:] = incem[:]
     
     ## normalize the image by the 99% percentile 
     IMG = IMG/(np.percentile(IMG[IMG>0.], 99.))
@@ -1018,7 +1015,7 @@ def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7, trim_thresh
 
     # Do the FFT and get the filter
     ifft2 = get_fft(value, radius=radius)
-    plt.imsave(MASK_FOLDER+fname+"ifft.png", ifft2)
+    #plt.imsave(MASK_FOLDER+fname+"ifft.png", ifft2)
 
     # Divide the image by the filter to remove high frequency noise
     if colorspace != 'rgb':
@@ -1047,7 +1044,7 @@ def scorr_fft(IMG, fname, radius=4., colorspace='hsv', trim_rad=0.7, trim_thresh
     # Save the mask as an image
     maskimg = np.zeros((data.shape[0]*data.shape[1]))
     maskimg[mask] = 1
-    plt.imsave(MASK_FOLDER+"%s_Lmask.png"%fname, maskimg.reshape((IMG.shape[0], IMG.shape[1])))
+    #plt.imsave(MASK_FOLDER+"%s_Lmask.png"%fname, maskimg.reshape((IMG.shape[0], IMG.shape[1])))
 
     # Trim the input image with this mask
     IMGf  = data.reshape((data.shape[0]*data.shape[1], 3))
@@ -1101,6 +1098,39 @@ def get_fft(value, radius):
     return ifft2
 
 def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
+    '''
+        Driver for the box_average stacking method. Calls the main function
+        via a multiprocessing Pool. 
+
+        The method works by sliding a box (BOX_X, BOX_Y) in shape across the 
+        image and finding the mean brightness of each image in that box and
+        applying a brightness weight such that the final image has a constant
+        brightness across the entire domain. The final stacked pixel values 
+        within that box is a weighted pixel-wise mean of all images. 
+
+
+        Inputs
+        ------
+        IMGs : numpy.ndarray
+            Array of images to stacked. Size is (nfiles, nlat, nlon, 3)
+        INCDs : numpy.ndarray
+            incidence angles of all images. Size is (nfiles, nlat, nlon)
+        incem : numpy.ndarray
+            product of cos(incidence) and cos(emission). Dummy lighting 
+            geometry variable used to mask bad pixels. 
+        Ls : numpy.ndarray
+            array of brightness values of the images. Taken as the value
+            channel of the HSV version of IMGs
+        ave_all : float
+            average brightness across all images
+        num_procs : int
+            number of processes to spawn for multiprocessing [default: 1]
+
+        Outputs
+        -------
+        IMG : numpy.ndarray
+            final stacked image. Size is (nlat, nlon, 3)
+    '''
     global shared_IMGs, shared_Ls, shared_INCDs, shared_incem, shared_IMG, \
         nfiles, nlon, nlat, ave_Ls
     nx = int(np.ceil(IMGs.shape[2]/BOX_X))
@@ -1168,11 +1198,24 @@ def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
         raise e
         sys.exit()
 
+    # pull the image array from the shared memory buffer
     IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat,nlon, 3))
+    # cleanup
     IMG[np.isnan(IMG)] = 0.
+
     return IMG
 
 def do_average_box(inp):
+    '''
+        Main averaging code. Called by `box_average`. Does the calculation 
+        for a given box. 
+
+        Inputs
+        -------
+        inp : tuple
+            grid extents for the given box. Values are the start and end pixel x
+            coordinates and start and end pixel y coordinates for the box
+    '''
     global shared_IMGs, shared_Ls, shared_INCDs, shared_incem, shared_IMG, \
         nfiles, nlon, nlat, ave_Ls
 
@@ -1190,7 +1233,6 @@ def do_average_box(inp):
     ave_all = ave_Ls
 
     try:
-
         alpha = np.zeros((nfiles, BOX_Y, BOX_X))
         # get the images in this box
         incem_ij = incem[:,starty:endy,startx:endx]
