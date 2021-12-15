@@ -17,10 +17,17 @@ make
 ```
 
 ## Examples
+
+### Projecting a single image 
+
 See `examples/projection.ipynb` for an example of JunoCam image projection.
 
 To rerun the projection code, you will need to unzip `8724-Data.zip` and `8724-ImageSet.zip`
 in the `examples/` folder , which will create the `DataSet` and `ImageSet` directories. 
 
-## Multi-image mosaicing
-(Coming soon...)
+### Multi-image mosaicing
+See `examples/mosaic.ipynb` for an example of mosaicing two images. To rerun the code, 
+you will need to unzip all the zip files in the `examples/` folder. 
+
+Example of mosaic from multiple images from perijove 27:
+![PJ27](examples/PJ27_mosaic_RGB.png)
