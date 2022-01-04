@@ -368,6 +368,10 @@ class Projector():
 
             limbs_jcam = self.get_limb(eti, cami)
 
+            if len(limbs_jcam) < 1:
+                min_dists[j] = 1.e10
+                continue
+
             distances = pairwise_distances(limbs_jcam, limb_img_points)
 
             if plot:
@@ -463,7 +467,7 @@ class Projector():
             os.mkdir(NC_FOLDER)
 
 
-        self.find_jitter(jitter_max=40)
+        self.find_jitter(jitter_max=60)
 
         ## flatfield and gain from Brian Swift's GitHub (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)
         flatfield = np.array(io.imread(os.path.dirname(__file__)+'/cal/flatFieldsSmooth12to16.tiff'))

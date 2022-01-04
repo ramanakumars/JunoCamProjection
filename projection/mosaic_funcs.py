@@ -112,7 +112,7 @@ def map_project_multi(files, outfile='multi_proj_raw.nc', pixres=1./25., num_pro
     nlon = newlon.size 
     
     # create the arrays to hold the intermediary data
-    IMG   = np.zeros((nlat, nlon, 3), dtype=np.float32)
+    IMG   = np.zeros((nlat, nlon, 3), dtype=float)
     IMGs  = np.zeros((len(files), nlat, nlon, 3), dtype=np.float32)
     Ls    = np.zeros((len(files), nlat, nlon), dtype=np.float32)
     INCDs = np.zeros((len(files), nlat, nlon), dtype=np.float32)
@@ -129,7 +129,7 @@ def map_project_multi(files, outfile='multi_proj_raw.nc', pixres=1./25., num_pro
 
         IMGi[np.isnan(IMGi)] = 0.
         # get brightness information
-        IMGs[i,:] = IMGi
+        IMGs[i,:] = IMGi.astype(np.float32)
         Ls[i,:]   = color.rgb2hsv(IMGi)[:,:,2]
 
         # flush out any progress bars
