@@ -15,6 +15,7 @@ from skimage.segmentation import slic
 from skimage.future import graph
 import spiceypy as spice
 import netCDF4 as nc
+import tqdm
 FRAME_HEIGHT = 128
 FRAME_WIDTH  = 1648
 

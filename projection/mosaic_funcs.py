@@ -18,8 +18,7 @@ nfiles     = 0
 
 shared_IMGs  = None
 shared_Ls    = None
-shared_INCDs = None
-shared_incem = None
+shared_mask  = None
 ave_Ls       = 0.
 
 def initializer():
@@ -178,8 +177,46 @@ def map_project_multi(files, outfile='multi_proj_raw.nc', pixres=1./25., num_pro
     del ave_val
     del npix
     gc.collect()
+    
+    if combine_method not in ['none']:
+        # create a dummy lighting geometry variable
+        incem = INCDs*EMISs
+    else:
+        incem = None
+
+    # build the image mask for each input file first
+    imgs_mask = np.zeros(IMGs.shape[:-1], dtype=np.uint8)
+    for jj in range(IMG.shape[0]):
+        if jj%100==0:
+            print("\rBuilding image mask: [%-20s] %d/%d"%(int(jj/IMG.shape[0]*20.)*'=', jj+1, IMG.shape[0]), 
+                  end='', flush=True)
+        for ii in range(IMG.shape[1]):
+            incemij = incem[:,jj,ii]
+            
+            # the best pixel is one that actually saw that feature, is not too dim, 
+            # and does not have a low incidence angle
+            imgs_mask[:,jj,ii] = ~np.isnan(incemij)&(Ls[:,jj,ii] > 0.5*Ls[:,jj,ii].max())&\
+                (INCDs[:,jj,ii]<np.radians(80))
 
     sys.stdout.flush()
+    
+    # save these parameters to a NetCDF file so that we can plot it later 
+    with nc.Dataset(NC_FOLDER+outfile, 'w') as f:
+        xdim     = f.createDimension('x',nlon)
+        ydim     = f.createDimension('y',nlat)
+        colors   = f.createDimension('colors',3)
+        files    = f.createDimension('file',len(files))
+
+        ##  create the NetCDF variables 
+        latVar   = f.createVariable('lat', 'float64', ('y'), zlib=True)
+        lonVar   = f.createVariable('lon', 'float64', ('x'), zlib=True)
+        imgsVar  = f.createVariable('imgs', 'float32', ('file', 'y','x','colors'), zlib=True)
+        masksVar = f.createVariable('img_mask', 'int8', ('file', 'y','x'), zlib=True)
+
+        latVar[:]   = newlat[:]
+        lonVar[:]   = newlon[:]
+        imgsVar[:]  = IMGs[:]
+        masksVar[:] = imgs_mask[:]
 
     if combine_method=='max':
         combine = np.max
@@ -188,10 +225,7 @@ def map_project_multi(files, outfile='multi_proj_raw.nc', pixres=1./25., num_pro
 
     if 'none' in scorr_method:
         IMG = np.max(IMGs, axis=0)
-        incem = None
     else:
-        # create a dummy lighting geometry variable
-        incem = INCDs*EMISs
 
         # remove regions of low lighting (even after 
         # lighting correction)
@@ -220,73 +254,16 @@ def map_project_multi(files, outfile='multi_proj_raw.nc', pixres=1./25., num_pro
                             IMG[jj,ii,:] = combine(IMGs[mask,jj,ii,:], axis=0)
                     elif nimgs > 0:
                         IMG[jj,ii,:] = IMGs[mask,jj,ii,:]
-        elif combine_method=='box_average_old':
-            nx = int(np.ceil(IMG.shape[1]/BOX_X))
-            ny = int(np.ceil(IMG.shape[0]/BOX_Y))
-
-            for jj in range(ny):
-                if jj%100==0:
-                    print("\r[%-20s] %d/%d"%(int(jj/ny*20.)*'=', jj+1, ny), end='', flush=True)
-                starty = jj*BOX_Y
-                endy   = min([IMG.shape[0], (jj+1)*BOX_Y])
-                for ii in range(nx):
-                    startx  = ii*BOX_X
-                    endx    = min([IMG.shape[1], (ii+1)*BOX_X])
-
-                    alpha = np.zeros((IMGs.shape[0], BOX_Y, BOX_X))
-                    # get the images in this box
-                    incem_ij = incem[:,starty:endy,startx:endx]
-                    incds_ij = INCDs[:,starty:endy,startx:endx]
-                    Ls_ij    = Ls[:,starty:endy,startx:endx]
-                    imgs_ij  = IMGs[:,starty:endy,startx:endx]
-
-                    # check if there any any images in this box
-                    mask = ~np.isnan(incem_ij)&(Ls_ij > 0.5*Ls_ij.max())&\
-                        (incds_ij<np.radians(80))
-                    if np.sum(mask) > 1:
-                        # if there are, then assign weights (alpha) to each pixel in 
-                        # each image. final image is a linear combination of images
-                        # with alphas
-                        for kk in range(IMGs.shape[0]):
-                            mask = ~np.isnan(incem_ij[kk,:])&(Ls_ij[kk,:] > 0.5*Ls[kk,:].max())&\
-                                (incds_ij[kk,:]<np.radians(80))
-
-                            # weight each image by its relative brightness wrt to the 
-                            # global mean
-                            if len(Ls_ij[kk,:,:][mask]) > 0:
-                                alpha[kk,:,:][mask]  = Ls_ij[kk,:,:][mask].mean()/ave_all
-                                alpha[kk,:][alpha[kk,:]!=0] = 1./alpha[kk,:][alpha[kk,:]!=0.]
-
-                        for c in range(3):
-                            IMGs_sub = np.multiply(imgs_ij[:,:,:,c], alpha)
-                            alpha_sum = np.sum(alpha, axis=0)
-                            alpha_sum[alpha_sum==0] = np.nan
-                            IMG[starty:endy,startx:endx,c] = np.divide(np.sum(IMGs_sub, axis=0), 
-                                                                        alpha_sum)
-                            IMG[np.isnan(IMG)] = 0.
-                    else:
-                        continue
         else:
-            IMG = box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=num_procs)
-    # clean up 
-    del INCDs
-    del EMISs
-    gc.collect()
+            # clean up memory usage
+            IMGs = None; INCDs = None; Ls = None; 
+            gc.collect()
+
+            IMG = box_average(NC_FOLDER+outfile, ave_all, num_procs=num_procs)
 
     # save these parameters to a NetCDF file so that we can plot it later 
-    with nc.Dataset(NC_FOLDER+outfile, 'w') as f:
-        xdim     = f.createDimension('x',nlon)
-        ydim     = f.createDimension('y',nlat)
-        colors   = f.createDimension('colors',3)
-        files    = f.createDimension('file',len(files))
-
-        ##  create the NetCDF variables 
-        latVar   = f.createVariable('lat', 'float64', ('y'), zlib=True)
-        lonVar   = f.createVariable('lon', 'float64', ('x'), zlib=True)
+    with nc.Dataset(NC_FOLDER+outfile, 'r+') as f:
         imgVar   = f.createVariable('img', 'float64', ('y','x','colors'), zlib=True)
-
-        latVar[:]  = newlat[:]
-        lonVar[:]  = newlon[:]
         imgVar[:]  = IMG[:]
     
     ## normalize the image by the 99% percentile 
@@ -1097,7 +1074,7 @@ def get_fft(value, radius):
 
     return ifft2
 
-def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
+def box_average(file, ave_all=1000, num_procs=1):
     '''
         Driver for the box_average stacking method. Calls the main function
         via a multiprocessing Pool. 
@@ -1131,11 +1108,21 @@ def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
         IMG : numpy.ndarray
             final stacked image. Size is (nlat, nlon, 3)
     '''
-    global shared_IMGs, shared_Ls, shared_INCDs, shared_incem, shared_IMG, \
+    global shared_IMGs, shared_Ls, shared_mask, shared_IMG, \
         nfiles, nlon, nlat, ave_Ls
+
+    # open the file and load the variables
+    with nc.Dataset(file, 'r') as dset:
+        IMGs = dset.variables['imgs'][:]
+        Ls   = np.zeros(IMGs.shape[:-1], dtype=np.float32)
+        mask = dset.variables['img_mask'][:]
+
+    # calculate the luminance
+    for i in range(IMGs.shape[0]):
+        Ls[i,:] = color.rgb2hsv(IMGs[i,:])[:,:,2]
+
     nx = int(np.ceil(IMGs.shape[2]/BOX_X))
     ny = int(np.ceil(IMGs.shape[1]/BOX_Y))
-
 
     inpargs = []
     
@@ -1144,8 +1131,8 @@ def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
     nlon   = IMGs.shape[2]
     ave_Ls = ave_all
     
-    ## build the inputs to the multiprocessing pipeline
-    ## this will decompose the imgs into (BOX_Y, BOX_X) slices
+    # build the inputs to the multiprocessing pipeline
+    # this will decompose the imgs into (BOX_Y, BOX_X) slices
     for jj in range(ny):
         starty = jj*BOX_Y
         endy   = min([nlat, (jj+1)*BOX_Y])
@@ -1156,33 +1143,43 @@ def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
             #inpargs.append([startxind,endxind,startyind,endyind, maski])
             inpargs.append([startx,endx,starty,endy])
     print(len(inpargs))
-    ## create the final image array
-    ## this will be stored as a shared array so each process 
-    ## can write to it
+
+    # create the final image array
+    # this will be stored as a shared array so each process 
+    # can write to it
     t0 = time.process_time()
-    IMGs_ctypes  = np.ctypeslib.as_ctypes(IMGs)
-    shared_IMGs  = sct.RawArray(IMGs_ctypes._type_, IMGs_ctypes)
-    Ls_ctypes    = np.ctypeslib.as_ctypes(Ls)
-    shared_Ls    = sct.RawArray(Ls_ctypes._type_, Ls_ctypes)
-    INCDs_ctypes = np.ctypeslib.as_ctypes(INCDs)
-    shared_INCDs = sct.RawArray(INCDs_ctypes._type_, INCDs_ctypes)
-    incem_ctypes = np.ctypeslib.as_ctypes(incem)
-    shared_incem = sct.RawArray(incem_ctypes._type_, incem_ctypes)
-    
+
+    # since this is all on *nix machines, we can take
+    # advantage of the copy-on-write functionality, so just
+    # share the array as a global variable, and this will 
+    # be accessible by all processes. we won't use additional
+    # memory since these variables are only copied when they are
+    # modified
+    #IMGs_ctypes  = np.ctypeslib.as_ctypes(IMGs)
+    shared_IMGs  = IMGs#sct.RawArray(IMGs_ctypes._type_, IMGs_ctypes)
+    #Ls_ctypes    = np.ctypeslib.as_ctypes(Ls)
+    shared_Ls    = Ls#sct.RawArray(Ls_ctypes._type_, Ls_ctypes)
+    #mask_ctypes  = np.ctypeslib.as_ctypes(mask)
+    shared_mask  = mask#sct.RawArray(mask_ctypes._type_, mask_ctypes)
+
+    # the final image will need to be written to, so create a shared
+    # multiprocessing object
     cdtype = np.ctypeslib.as_ctypes_type(np.dtype(float))
     shared_IMG = multiprocessing.RawArray(cdtype, nlat*nlon*3)
     print(time.process_time() - t0, flush=True)
 
-    ## start the pool
+    # start the pool when memory is unloaded
     pool = multiprocessing.Pool(processes=num_procs, initializer=initializer)
+    cdtype = np.ctypeslib.as_ctypes_type(np.dtype(float))
     try:
         ## start the multicore grid processing
+        '''
         r = pool.map_async(do_average_box, inpargs)
         pool.close()
 
         tasks = pool._cache[r._job]
         ninpt = len(inpargs)
-        last_update = tasks._number_left
+        last_update = tasks._number_leftprojmulti.nc_
         print("starting...")
         while tasks._number_left > 0:
             progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
@@ -1192,6 +1189,10 @@ def box_average(IMGs, INCDs, incem, Ls, ave_all, num_procs=1):
                 sys.stdout.flush()
                 last_update = progress
             time.sleep(0.05)
+        '''
+        for _ in tqdm.tqdm(pool.imap_unordered(do_average_box, inpargs), total=len(inpargs)):
+            pass
+        pool.close()
     except Exception as e:
         pool.terminate()
         pool.join()
@@ -1221,13 +1222,14 @@ def do_average_box(inp):
 
     startx, endx, starty, endy = inp
 
-    IMGs   = np.asarray(shared_IMGs, dtype=np.float32).reshape((nfiles, nlat, nlon, 3))
-    INCDs  = np.asarray(shared_INCDs, dtype=np.float32).reshape((nfiles, nlat, nlon))
-    Ls     = np.asarray(shared_Ls, dtype=np.float32).reshape((nfiles, nlat, nlon))
-    incem  = np.asarray(shared_incem, dtype=np.float32).reshape((nfiles, nlat, nlon))
-    
-    IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat, nlon, 3))
+    #IMGs   = np.array(shared_IMGs, dtype=np.float32).reshape((nfiles, nlat, nlon, 3))
+    #Ls     = np.array(shared_Ls, dtype=np.float32).reshape((nfiles, nlat, nlon))
+    #mask   = np.array(shared_mask, dtype=np.int8).reshape((nfiles, nlat, nlon))
 
+    IMGs = shared_IMGs
+    Ls   = shared_Ls
+    mask = shared_mask
+    
     Lsmax = np.max(Ls, axis=(1,2))
 
     ave_all = ave_Ls
@@ -1235,29 +1237,23 @@ def do_average_box(inp):
     try:
         alpha = np.zeros((nfiles, BOX_Y, BOX_X))
         # get the images in this box
-        incem_ij = incem[:,starty:endy,startx:endx]
-        incds_ij = INCDs[:,starty:endy,startx:endx]
         Ls_ij    = Ls[:,starty:endy,startx:endx]
+        mask_ij  = mask[:,starty:endy,startx:endx]
         imgs_ij  = IMGs[:,starty:endy,startx:endx]
         
-        # check if there any any images in this box
-        mask = ~np.isnan(incem_ij)&(Ls_ij > 0.2*Ls_ij.max())&\
-            (incds_ij<np.radians(80))
-
-        if np.sum(mask) > 1:
+        if np.sum(mask_ij) > 1:
             # if there are, then assign weights (alpha) to each pixel in 
             # each image. final image is a linear combination of images
             # with alphas
             for kk in range(IMGs.shape[0]):
-                mask = ~np.isnan(incem_ij[kk,:])&(Ls_ij[kk,:] > 0.2*Lsmax[kk])&\
-                    (incds_ij[kk,:]<np.radians(80))
-
+                mask_k = mask_ij[kk,:]
                 # weight each image by its relative brightness wrt to the 
                 # global mean
                 if len(Ls_ij[kk,:,:][mask]) > 0:
-                    alpha[kk,:,:][mask]  = Ls_ij[kk,:,:][mask].mean()/ave_all
+                    alpha[kk,:,:][mask_k]  = Ls_ij[kk,:,:][mask_k].mean()/ave_all
                     alpha[kk,:][alpha[kk,:]!=0] = 1./alpha[kk,:][alpha[kk,:]!=0.]
 
+            IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat, nlon, 3))
             for c in range(3):
                 IMGs_sub = imgs_ij[:,:,:,c]*alpha
                 alpha_sum = np.sum(alpha, axis=0)
