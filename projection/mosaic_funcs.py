@@ -777,7 +777,7 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
         AssertionError
             if `save`=True but no fname defined
     '''
-    with nc.Dataset(datafile, "r+") as data:
+    with nc.Dataset(datafile, "r") as data:
         IMG  = data.variables['img'][:]
         lon  = data.variables['lon'][:]
         lat  = data.variables['lat'][:]
@@ -802,12 +802,15 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
         IMG2 = IMG2/(np.percentile(IMG2[IMG2>0.], 99.9))
         IMG2 = np.clip(IMG2, 0, 1)
 
+        IMG_corr = np.asarray(IMG2*255, dtype=np.uint8)
+
+    with nc.Dataset(datafile, "r+") as data:
         ## save the new image out to the netCDF file
         if 'img_corr' not in data.variables.keys():
             img_corrVar = data.createVariable('img_corr', 'uint8', ('y','x','colors'), zlib=True)
-            img_corrVar[:] = np.asarray(IMG2*255, dtype=np.uint8)
+            img_corrVar[:] = IMG_corr
         else:
-            data.variables['img_corr'][:] = np.asarray(IMG2*255, dtype=np.uint8)
+            data.variables['img_corr'][:] = IMG_corr
 
     if save:
         assert not isinstance(fname, type(None)), \
