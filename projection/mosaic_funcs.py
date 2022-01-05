@@ -1,4 +1,5 @@
 from .camera_funcs import *
+from skimage import measure
 
 NLAT_SLICE  = 20
 NLON_SLICE  = 20
@@ -492,7 +493,27 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         IMGnew[IMGnew.min(axis=-1)<0.1,:] = 0
         IMG = IMGnew.reshape((latg.size, long.size, 3))
         imgi = IMG.copy()
-        
+
+        # get the edge points by plotting a contour around the image
+        #cs = plt.contour(np.arange(imgi.shape[1]), np.arange(imgi.shape[0]), imgi.mean(axis=-1), [0, 0.1])
+        edge_points = measure.find_contours(imgi.mean(axis=-1), 0.1)#cs.collections[0].get_paths()[0].vertices.astype(int)
+        edge_points = np.asarray(edge_points[0], dtype=int)
+
+        trim_size = 2
+
+        # loop over the edge points and trim 
+        for i in range(len(edge_points)):
+            if os.environ.get('NO_VERBOSE') is None:
+                print("\rTrimming: [%-20s] %d/%d"%(int(i/len(edge_points)*20)*'=', i+1, len(edge_points)), end='')
+            jj, ii = edge_points[i,:]
+            # get the window around this pixel
+            img_sub = IMG[(jj-trim_size):(jj+trim_size),(ii-trim_size):(ii+trim_size),:]
+
+            # if there is an edge in this image (given by a 0 value)
+            # set the pixel value to 0
+            if img_sub.mean(axis=-1).min() < 0.1:
+                imgi[jj,ii,:] = 0.
+        '''
         trim_size = 2
         # trim edges from this image to avoid interpolation errors
         for jj in range(trim_size,latg.size-trim_size):
@@ -511,6 +532,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
                 # set the pixel value to 0
                 if img_sub.mean(axis=-1).min() < 0.1:
                     imgi[jj,ii,:] = 0.
+        '''
         print()
 
         IMG = imgi.copy()
@@ -1193,6 +1215,7 @@ def box_average(file, ave_all=1000, num_procs=1):
         for _ in tqdm.tqdm(pool.imap_unordered(do_average_box, inpargs), total=len(inpargs)):
             pass
         pool.close()
+        pool.join()
     except Exception as e:
         pool.terminate()
         pool.join()
