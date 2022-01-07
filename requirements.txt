@@ -8,3 +8,4 @@ netCDF4
 cartopy
 scikit-learn
 scikit-image
+tqdm

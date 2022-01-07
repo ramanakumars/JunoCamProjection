@@ -1193,7 +1193,9 @@ def box_average(file, ave_all=1000, num_procs=1):
                 last_update = progress
             time.sleep(0.05)
         '''
-        for _ in tqdm.tqdm(pool.imap_unordered(do_average_box, inpargs), total=len(inpargs)):
+        for _ in tqdm.tqdm(pool.imap_unordered(do_average_box, inpargs), 
+                           total=len(inpargs), miniters=int(0.01*len(inpargsa)), 
+                           mininterval=2):
             pass
         pool.close()
     except Exception as e:
@@ -1252,7 +1254,7 @@ def do_average_box(inp):
                 mask_k = mask_ij[kk,:]
                 # weight each image by its relative brightness wrt to the 
                 # global mean
-                if len(Ls_ij[kk,:,:][mask]) > 0:
+                if len(Ls_ij[kk,:,:][mask_k]) > 0:
                     alpha[kk,:,:][mask_k]  = Ls_ij[kk,:,:][mask_k].mean()/ave_all
                     alpha[kk,:][alpha[kk,:]!=0] = 1./alpha[kk,:][alpha[kk,:]!=0.]
 
