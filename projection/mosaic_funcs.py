@@ -4,8 +4,8 @@ from skimage import measure
 NLAT_SLICE  = 20
 NLON_SLICE  = 20
 
-BOX_X = 1000
-BOX_Y = 1000
+BOX_X = 50
+BOX_Y = 50
 
 shared_lat = None
 shared_lon = None
@@ -264,8 +264,11 @@ def map_project_multi(files, outfile='multi_proj_raw.nc', pixres=1./25., num_pro
 
     # save these parameters to a NetCDF file so that we can plot it later 
     with nc.Dataset(NC_FOLDER+outfile, 'r+') as f:
-        imgVar   = f.createVariable('img', 'float64', ('y','x','colors'), zlib=True)
-        imgVar[:]  = IMG[:]
+        if 'img' not in f.variables.keys():
+            imgVar   = f.createVariable('img', 'float64', ('y','x','colors'), zlib=True)
+            imgVar[:]  = IMG[:]
+        else:
+            f.variables['img'] = IMG[:]
     
     ## normalize the image by the 99% percentile 
     IMG = IMG/(np.percentile(IMG[IMG>0.], 99.))
