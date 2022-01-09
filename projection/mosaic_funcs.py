@@ -4,8 +4,8 @@ from skimage import measure
 NLAT_SLICE  = 20
 NLON_SLICE  = 20
 
-BOX_X = 50
-BOX_Y = 50
+BOX_X = 1000
+BOX_Y = 1000
 
 shared_lat = None
 shared_lon = None
@@ -1099,6 +1099,15 @@ def get_fft(value, radius):
 
     return ifft2
 
+def initialize_box_average(IMGs, Ls, mask):
+    global shared_IMGs, shared_Ls, shared_mask
+    
+    shared_IMGs = IMGs
+    shared_Ls   = Ls
+    shared_mask = mask
+
+    initializer()
+
 def box_average(file, ave_all=1000, num_procs=1):
     '''
         Driver for the box_average stacking method. Calls the main function
@@ -1135,25 +1144,26 @@ def box_average(file, ave_all=1000, num_procs=1):
     '''
     global shared_IMGs, shared_Ls, shared_mask, shared_IMG, \
         nfiles, nlon, nlat, ave_Ls
-
+    
     # open the file and load the variables
     with nc.Dataset(file, 'r') as dset:
+        nfiles = dset.dimensions['file'].size
+        nlon   = dset.dimensions['x'].size
+        nlat   = dset.dimensions['y'].size
         IMGs = dset.variables['imgs'][:]
-        Ls   = np.zeros(IMGs.shape[:-1], dtype=np.float32)
         mask = dset.variables['img_mask'][:]
 
+    print(IMGs.shape)
     # calculate the luminance
-    for i in range(IMGs.shape[0]):
-        Ls[i,:] = color.rgb2hsv(IMGs[i,:])[:,:,2]
+    Ls = IMGs.mean(axis=-1)#color.rgb2hsv(IMGs[i,:])[:,:,2]
 
-    nx = int(np.ceil(IMGs.shape[2]/BOX_X))
-    ny = int(np.ceil(IMGs.shape[1]/BOX_Y))
+    print(Ls.min(), Ls.max())
+
+    nx = int(np.ceil(nlon/BOX_X))
+    ny = int(np.ceil(nlat/BOX_Y))
 
     inpargs = []
     
-    nfiles = IMGs.shape[0]
-    nlat   = IMGs.shape[1]
-    nlon   = IMGs.shape[2]
     ave_Ls = ave_all
     
     # build the inputs to the multiprocessing pipeline
@@ -1180,31 +1190,34 @@ def box_average(file, ave_all=1000, num_procs=1):
     # be accessible by all processes. we won't use additional
     # memory since these variables are only copied when they are
     # modified
-    #IMGs_ctypes  = np.ctypeslib.as_ctypes(IMGs)
-    shared_IMGs  = IMGs#sct.RawArray(IMGs_ctypes._type_, IMGs_ctypes)
-    #Ls_ctypes    = np.ctypeslib.as_ctypes(Ls)
-    shared_Ls    = Ls#sct.RawArray(Ls_ctypes._type_, Ls_ctypes)
-    #mask_ctypes  = np.ctypeslib.as_ctypes(mask)
-    shared_mask  = mask#sct.RawArray(mask_ctypes._type_, mask_ctypes)
+    IMGs_ctypes  = np.ctypeslib.as_ctypes(IMGs)
+    shared_IMGs  = np.ctypeslib.as_array(\
+        sct.RawArray(IMGs_ctypes._type_, IMGs_ctypes)).reshape((nfiles, nlat, nlon, 3))
+    Ls_ctypes    = np.ctypeslib.as_ctypes(Ls)
+    shared_Ls    = np.ctypeslib.as_array(\
+        sct.RawArray(Ls_ctypes._type_, Ls_ctypes)).reshape((nfiles, nlat, nlon))
+    mask_ctypes  = np.ctypeslib.as_ctypes(mask)
+    shared_mask  = np.ctypeslib.as_array(\
+        sct.RawArray(mask_ctypes._type_, mask_ctypes)).reshape((nfiles, nlat, nlon))
+
 
     # the final image will need to be written to, so create a shared
     # multiprocessing object
     cdtype = np.ctypeslib.as_ctypes_type(np.dtype(float))
-    shared_IMG = multiprocessing.RawArray(cdtype, nlat*nlon*3)
+    shared_IMG = np.ctypeslib.as_array(sct.RawArray(cdtype, nlat*nlon*3)).reshape((nlat, nlon, 3))
+    #shared_IMG      = np.ctypeslib.as_array(shared_IMG_base.get_obj()).reshape((nlat, nlon, 3))
     print(time.process_time() - t0, flush=True)
 
     # start the pool when memory is unloaded
     pool = multiprocessing.Pool(processes=num_procs, initializer=initializer)
-    cdtype = np.ctypeslib.as_ctypes_type(np.dtype(float))
     try:
         ## start the multicore grid processing
-        '''
         r = pool.map_async(do_average_box, inpargs)
         pool.close()
 
         tasks = pool._cache[r._job]
         ninpt = len(inpargs)
-        last_update = tasks._number_leftprojmulti.nc_
+        last_update = tasks._number_left
         print("starting...")
         while tasks._number_left > 0:
             progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
@@ -1216,11 +1229,11 @@ def box_average(file, ave_all=1000, num_procs=1):
             time.sleep(0.05)
         '''
         for _ in tqdm.tqdm(pool.imap_unordered(do_average_box, inpargs), 
-                           total=len(inpargs), miniters=int(0.01*len(inpargsa)), 
+                           total=len(inpargs), miniters=100, 
                            mininterval=2):
             pass
         pool.close()
-        pool.join()
+        '''
     except Exception as e:
         pool.terminate()
         pool.join()
@@ -1228,8 +1241,10 @@ def box_average(file, ave_all=1000, num_procs=1):
         sys.exit()
 
     # pull the image array from the shared memory buffer
-    IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat,nlon, 3))
+    #IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat,nlon, 3))
+    #IMG = np.ctypeslib.as_array(shared_IMG_base.get_obj()).reshape((nlat,nlon, 3))
     # cleanup
+    IMG = shared_IMG
     IMG[np.isnan(IMG)] = 0.
 
     return IMG
@@ -1245,48 +1260,45 @@ def do_average_box(inp):
             grid extents for the given box. Values are the start and end pixel x
             coordinates and start and end pixel y coordinates for the box
     '''
-    global shared_IMGs, shared_Ls, shared_INCDs, shared_incem, shared_IMG, \
-        nfiles, nlon, nlat, ave_Ls
+    global shared_IMGs, shared_Ls, shared_mask, shared_IMG, ave_Ls
 
     startx, endx, starty, endy = inp
 
-    #IMGs   = np.array(shared_IMGs, dtype=np.float32).reshape((nfiles, nlat, nlon, 3))
-    #Ls     = np.array(shared_Ls, dtype=np.float32).reshape((nfiles, nlat, nlon))
-    #mask   = np.array(shared_mask, dtype=np.int8).reshape((nfiles, nlat, nlon))
-
-    IMGs = shared_IMGs
-    Ls   = shared_Ls
-    mask = shared_mask
+    '''
+    IMGs   = np.array(shared_IMGs, dtype=np.float32).reshape((nfiles, nlat, nlon, 3))
+    Ls     = np.array(shared_Ls, dtype=np.float32).reshape((nfiles, nlat, nlon))
+    mask   = np.array(shared_mask, dtype=np.int8).reshape((nfiles, nlat, nlon))
+    '''
     
-    Lsmax = np.max(Ls, axis=(1,2))
-
     ave_all = ave_Ls
+    nfiles = shared_IMGs.shape[0]
 
     try:
-        alpha = np.zeros((nfiles, BOX_Y, BOX_X))
         # get the images in this box
-        Ls_ij    = Ls[:,starty:endy,startx:endx]
-        mask_ij  = mask[:,starty:endy,startx:endx]
-        imgs_ij  = IMGs[:,starty:endy,startx:endx]
+        mask_ij  = shared_mask[:,starty:endy,startx:endx]
         
         if np.sum(mask_ij) > 1:
+            Ls_ij    = shared_Ls[:,starty:endy,startx:endx].astype(float)
+            imgs_ij  = shared_IMGs[:,starty:endy,startx:endx].astype(float)
+            alpha = np.zeros_like(Ls_ij)
+
             # if there are, then assign weights (alpha) to each pixel in 
             # each image. final image is a linear combination of images
             # with alphas
-            for kk in range(IMGs.shape[0]):
-                mask_k = mask_ij[kk,:]
+            for kk in range(nfiles):
+                mask_k = np.where(mask_ij[kk,:]==1)
                 # weight each image by its relative brightness wrt to the 
                 # global mean
                 if len(Ls_ij[kk,:,:][mask_k]) > 0:
                     alpha[kk,:,:][mask_k]  = Ls_ij[kk,:,:][mask_k].mean()/ave_all
                     alpha[kk,:][alpha[kk,:]!=0] = 1./alpha[kk,:][alpha[kk,:]!=0.]
 
-            IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat, nlon, 3))
+            #IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat, nlon, 3))
             for c in range(3):
                 IMGs_sub = imgs_ij[:,:,:,c]*alpha
                 alpha_sum = np.sum(alpha, axis=0)
                 alpha_sum[alpha_sum==0] = np.nan
-                IMG[starty:endy,startx:endx,c] = np.divide(np.sum(IMGs_sub, axis=0), alpha_sum)
+                shared_IMG[starty:endy,startx:endx,c] = np.divide(np.sum(IMGs_sub, axis=0), alpha_sum)
     except Exception as e:
         raise e
 
