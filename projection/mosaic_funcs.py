@@ -499,11 +499,12 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
 
         # get the edge points by plotting a contour around the image
         #cs = plt.contour(np.arange(imgi.shape[1]), np.arange(imgi.shape[0]), imgi.mean(axis=-1), [0, 0.1])
-        edge_points = measure.find_contours(imgi.mean(axis=-1), 0.1)#cs.collections[0].get_paths()[0].vertices.astype(int)
-        edge_points = np.asarray(edge_points[0], dtype=int)
+        #edge_points = measure.find_contours(imgi.mean(axis=-1), 0.1)#cs.collections[0].get_paths()[0].vertices.astype(int)
+        #edge_points = np.asarray(edge_points[0], dtype=int)
 
         trim_size = 2
 
+        '''
         # loop over the edge points and trim 
         for i in range(len(edge_points)):
             if os.environ.get('NO_VERBOSE') is None:
@@ -535,7 +536,6 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
                 # set the pixel value to 0
                 if img_sub.mean(axis=-1).min() < 0.1:
                     imgi[jj,ii,:] = 0.
-        '''
         print()
 
         IMG = imgi.copy()
