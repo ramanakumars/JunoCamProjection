@@ -124,8 +124,8 @@ class Projector():
         '''
         ## find and load the kernels for a specific date 
         iks   = sorted(glob.glob(KERNEL_DATAFOLDER+"ik/juno_junocam_v*.ti"))
-        cks   = sorted(glob.glob(KERNEL_DATAFOLDER+"ck/juno_sc_rec_*.bc"))
-        spks1 = sorted(glob.glob(KERNEL_DATAFOLDER+"spk/spk_rec_*.bsp"))
+        cks   = sorted(glob.glob(KERNEL_DATAFOLDER+"ck/juno_sc_*.bc"))
+        spks1 = sorted(glob.glob(KERNEL_DATAFOLDER+"spk/spk_*.bsp"))
         spks2 = sorted(glob.glob(KERNEL_DATAFOLDER+"spk/jup*.bsp"))
         spks3 = sorted(glob.glob(KERNEL_DATAFOLDER+"spk/de*.bsp"))
         pcks  = sorted(glob.glob(KERNEL_DATAFOLDER+"pck/pck*.tpc"))
@@ -211,6 +211,9 @@ class Projector():
         kernels.append(fks[-1])
         kernels.append(sclks[-1])
         kernels.append(lsks[-1])
+        kernels.append(KERNEL_DATAFOLDER+"spk/juno_rec_orbit.bsp")
+        kernels.append(KERNEL_DATAFOLDER+"spk/juno_pred_orbit.bsp")
+        kernels.append(sorted(glob.glob(KERNEL_DATAFOLDER+"spk/juno_struct*.bsp"))[-1])
 
         self.kernels = kernels
         for kernel in self.kernels:
@@ -467,7 +470,7 @@ class Projector():
             os.mkdir(NC_FOLDER)
 
 
-        self.find_jitter(jitter_max=60)
+        self.find_jitter(jitter_max=120)
 
         ## flatfield and gain from Brian Swift's GitHub (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)
         flatfield = np.array(io.imread(os.path.dirname(__file__)+'/cal/flatFieldsSmooth12to16.tiff'))
