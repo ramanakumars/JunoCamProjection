@@ -187,10 +187,10 @@ def map_project_multi(files, outfile='multi_proj_raw.nc', pixres=1./25., num_pro
 
     # build the image mask for each input file first
     imgs_mask = np.zeros(IMGs.shape[:-1], dtype=np.uint8)
-    for jj in range(IMG.shape[0]):
-        if jj%100==0:
-            print("\rBuilding image mask: [%-20s] %d/%d"%(int(jj/IMG.shape[0]*20.)*'=', jj+1, IMG.shape[0]), 
-                  end='', flush=True)
+    for jj in tqdm.tqdm(range(IMG.shape[0]), desc='Building image mask'):
+        #if jj%100==0:
+        #    print("\rBuilding image mask: [%-20s] %d/%d"%(int(jj/IMG.shape[0]*20.)*'=', jj+1, IMG.shape[0]), 
+        #          end='', flush=True)
         for ii in range(IMG.shape[1]):
             incemij = incem[:,jj,ii]
             
@@ -235,10 +235,7 @@ def map_project_multi(files, outfile='multi_proj_raw.nc', pixres=1./25., num_pro
 
         # loop through every pixel and find the best value to assign to the mosaic
         if combine_method in ['min', 'max']:
-            for jj in range(IMG.shape[0]):
-                if jj%100==0:
-                    print("\r[%-20s] %d/%d"%(int(jj/IMG.shape[0]*20.)*'=', jj+1, IMG.shape[0]), 
-                          end='', flush=True)
+            for jj in tqdm.tqdm(range(IMG.shape[0])):
                 for ii in range(IMG.shape[1]):
                     incemij = incem[:,jj,ii]
                     
@@ -367,8 +364,11 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         lonmin = lons[masks].min()
         lonmax = lons[masks].max()
 
-        newlon = np.arange(lonmin, lonmax, pixres)
-        newlat = np.arange(latmin, latmax, pixres)
+        nx = int((lonmax - lonmin)/pixres + 1)
+        ny = int((latmax - latmin)/pixres + 1)
+
+        newlon = np.linspace(lonmin, lonmax, nx)
+        newlat = np.linspace(latmin, latmax, ny)
         print("Limits: lon: %.3f %.3f  lat: %.3f %.3f  size: %d x %d"%(\
                 newlon.min(), newlon.max(), newlat.min(), newlat.max(), newlon.size, newlat.size))
     else:
@@ -382,10 +382,18 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
 
     ## get the image mask where no data exists
     ## this is created to remove errors from interpolation
-    if load&os.path.exists(NPY_FOLDER+"%s_mask.npy"%fname):
-        print("Loading mask file")
-        maski = np.load(NPY_FOLDER+"%s_mask.npy"%fname)
-    else:
+    try:
+        if load&os.path.exists(NPY_FOLDER+"%s_mask.npy"%fname):
+            maski = np.load(NPY_FOLDER+"%s_mask.npy"%fname)
+            if maski.shape != LON.T.shape:
+                print(maski.shape, LON.shape)
+                raise ValueError("mask has incorrect shape")
+        else:
+            raise ValueError("load is not enabled")
+
+        print("Loaded mask file")
+    except ValueError as e:
+        print(e)
         roll_lon = newlon - lon_rot
         roll_lon[roll_lon < -180.] += 360.
         roll_lon[roll_lon >  180.] -= 360.
@@ -399,20 +407,26 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
     if(savemask):
         plt.imsave(MASK_FOLDER+'mask_%s.png'%(fname), maski, vmin=0., vmax=1., cmap='gray', origin='lower')
 
+    ## create a shared memory object for LON/LAT
+    LON_ctypes = np.ctypeslib.as_ctypes(LON)
+    shared_LON = sct.RawArray(LON_ctypes._type_, LON_ctypes)
+    LAT_ctypes = np.ctypeslib.as_ctypes(LAT)
+    shared_LAT = sct.RawArray(LAT_ctypes._type_, LAT_ctypes)
+
     # loop through each color and create that color band in the projection
     for ci in range(3):
         print("Processing %s"%(FILTERS[ci]))
         filteriname = NPY_FOLDER + "%s_%s.npy"%(fname, FILTERS[ci])
         # load the image if needed
-        if load&os.path.exists(filteriname):
-            print("Loading from %s"%filteriname)
-            IMGI = np.load(filteriname)
-        else:
-            ## create a shared memory object for LON/LAT
-            LON_ctypes = np.ctypeslib.as_ctypes(LON)
-            shared_LON = sct.RawArray(LON_ctypes._type_, LON_ctypes)
-            LAT_ctypes = np.ctypeslib.as_ctypes(LAT)
-            shared_LAT = sct.RawArray(LAT_ctypes._type_, LAT_ctypes)
+        try:
+            if load&os.path.exists(filteriname):
+                print("Loading from %s"%filteriname)
+                IMGI = np.load(filteriname)
+                maski[IMGI<0.001] = 0
+                IMG[:,:,ci]  = IMGI
+            else:
+                raise ValueError("load is not enabled")
+        except (ValueError, IndexError):
 
             lati = lats[:,ci,:,:].flatten()
             loni = lons[:,ci,:,:].flatten()
@@ -435,8 +449,8 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
 
             ## Save the data out to a numpy file
             np.save(filteriname, IMGI)
-        maski[IMGI<0.001] = 0
-        IMG[:,:,ci]  = IMGI
+            maski[IMGI<0.001] = 0
+            IMG[:,:,ci]  = IMGI
 
     INCD, EMIS = get_emis_incid_map(incid, emis, lats, lons, \
                                    newlat, newlon, maski, fname, \
@@ -570,8 +584,8 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         colors   = f.createDimension('colors',3)
 
         ## create the NetCDF variables
-        latVar  = f.createVariable('lat', 'float32', ('y'), zlib=True)
-        lonVar  = f.createVariable('lon', 'float32', ('x'), zlib=True)
+        latVar  = f.createVariable('lat', 'float64', ('y'))
+        lonVar  = f.createVariable('lon', 'float64', ('x'))
 
         lonVar.units = "degrees east"
         latVar.units = "degrees north"
@@ -647,10 +661,9 @@ def project_to_uniform_grid(lon, lat, img, num_procs=1):
     ## build the inputs to the multiprocessing pipeline
     ## this will decompose the longitude grid into NLON_SLICE
     ## and the latitude grid into NLAT_SLICEs
-    for j in range(NLAT_SLICE):
+    for j in tqdm.tqdm(range(NLAT_SLICE)):
         startyind = j*nsquare_lat
         endyind   = min([nlat, (j+1)*nsquare_lat])
-        print("\r %d/%d"%(j, NLAT_SLICE), end='')
         for i in range(NLON_SLICE):
             startxind = i*nsquare_lon
             endxind   = min([nlon, (i+1)*nsquare_lon])
@@ -668,7 +681,6 @@ def project_to_uniform_grid(lon, lat, img, num_procs=1):
             if(len(maski) > 3):
                 #inpargs.append([startxind,endxind,startyind,endyind, maski])
                 inpargs.append([startxind,endxind,startyind,endyind,lon[maski],lat[maski],img[maski]])
-    print()
     ## create the final image array
     ## this will be stored as a shared array so each process 
     ## can write to it
@@ -686,18 +698,21 @@ def project_to_uniform_grid(lon, lat, img, num_procs=1):
 
         tasks = pool._cache[r._job]
         ninpt = len(inpargs)
-        while tasks._number_left > 0:
-            progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
-            if os.environ.get('NO_VERBOSE') is None:
-                print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
-            time.sleep(0.05)
+        if os.environ.get('NO_VERBOSE') is None:
+            with tqdm.tqdm(total=ninpt) as pbar: 
+                while tasks._number_left > 0:
+                    #progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
+                    pbar.n = ninpt - tasks._number_left*tasks._chunksize
+                    pbar.refresh()
+                    
+                    #    print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
+                    time.sleep(0.1)
     except Exception as e:
         pool.terminate()
         pool.join()
         raise e
         sys.exit()
     
-    print()
     pool.join()
 
     return np.frombuffer(shared_IMG, dtype=float).reshape((nlat,nlon)) #np.ctypeslib.as_array(IMG_ctypes)
@@ -821,12 +836,14 @@ def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, 
         plt.imsave(MOS_FOLDER+'%s_mosaic_RGB.png'%fname, IMG2, origin='lower')
     
 
+    '''
     fig, ax = plt.subplots(1,1,figsize=(10,10),dpi=150)
     ax.imshow(IMG2, extent=(lon.min(), lon.max(), lat.min(), lat.max()),\
                origin='lower')
     ax.set_xlabel(r"Longitude [deg]")
     ax.set_ylabel(r"Latitude [deg]")
     plt.show()
+    '''
 
     return IMG2
 
@@ -870,19 +887,33 @@ def get_emis_incid_map(incid, emis, lat, lon, newlat, newlon, maski, \
     ## project the incidence and emission values onto the new grid
     LAT, LON = np.meshgrid(newlat, newlon)
 
-    if load&os.path.exists(NPY_FOLDER+"%s_emis.npy"%fname):
-        print("Loading emission data")
-        EMIS = np.load(NPY_FOLDER+"%s_emis.npy"%fname)
-    else:
+    try:
+        if load&os.path.exists(NPY_FOLDER+"%s_emis.npy"%fname):
+            print("Loading emission data")
+            EMIS = np.load(NPY_FOLDER+"%s_emis.npy"%fname)
+        else:
+            raise ValueError("load is not set.")
+
+        if EMIS.shape != (newlat.size, newlon.size):
+            raise ValueError("emis has incorrect size")
+    except ValueError as e:
+        print(e)
         print("Processing emission angles")
         EMIS = project_to_uniform_grid(lonf, latf, emisf, num_procs=num_procs)
         EMIS[~maski] = np.nan
         np.save(NPY_FOLDER+"%s_emis.npy"%fname, EMIS)
     
-    if load&os.path.exists(NPY_FOLDER+"%s_incid.npy"%fname):
-        print("Loading incidence data")
-        INCD = np.load(NPY_FOLDER+"%s_incid.npy"%fname)
-    else:
+    try:
+        if load&os.path.exists(NPY_FOLDER+"%s_incid.npy"%fname):
+            print("Loading incidence data")
+            INCD = np.load(NPY_FOLDER+"%s_incid.npy"%fname)
+        else:
+            raise ValueError("load is not set")
+
+        if INCD.shape != (newlat.size, newlon.size):
+            raise ValueError("emis has incorrect size")
+    except ValueError as e:
+        print(e)
         print("Processing incidence angles")
         INCD = project_to_uniform_grid(lonf, latf, incidsf, num_procs=num_procs)
         INCD[~maski] = np.nan

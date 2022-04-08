@@ -1,6 +1,6 @@
 import numpy as np
 import os, sys
-import ctypes, time, signal
+import ctypes
 
 ## load the C library to get the projection mask
 project_c = np.ctypeslib.load_library('project.so', os.path.dirname(__file__))
