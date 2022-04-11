@@ -503,10 +503,16 @@ class Projector():
 
             tasks = pool._cache[r._job]
             ninpt = len(inpargs)
-            while tasks._number_left > 0:
-                progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
-                print("\r[%-20s] %4.2f%%"%(int(progress*20)*'=', progress*100.), end='')
-                time.sleep(0.05)
+            with tqdm.tqdm(total=ninpt) as pbar: 
+                while tasks._number_left > 0:
+                    #progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
+                    #print("\r[%-20s] %4.2f%%"%(int(progress*20)*'=', progress*100.), end='')
+                    #time.sleep(0.05)
+                    pbar.n = ninpt - tasks._number_left*tasks._chunksize
+                    pbar.refresh()
+                    
+                    #    print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
+                    time.sleep(0.1)
         except KeyboardInterrupt:
             pool.terminate()
             pool.join()
