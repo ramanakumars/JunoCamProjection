@@ -367,10 +367,11 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         nx = int((lonmax - lonmin)/pixres + 1)
         ny = int((latmax - latmin)/pixres + 1)
 
-        newlon = np.linspace(lonmin, lonmax, nx)
-        newlat = np.linspace(latmin, latmax, ny)
+        newlon = np.linspace(lonmin, lonmax, nx, endpoint=True)
+        newlat = np.linspace(latmin, latmax, ny, endpoint=True)
         print("Limits: lon: %.3f %.3f  lat: %.3f %.3f  size: %d x %d"%(\
                 newlon.min(), newlon.max(), newlat.min(), newlat.max(), newlon.size, newlat.size))
+        print(newlat[-1] - latmax, newlon[-1] - lonmax)
     else:
         raise RuntimeError("Please provide a resolution")
 
@@ -386,7 +387,6 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         if load&os.path.exists(NPY_FOLDER+"%s_mask.npy"%fname):
             maski = np.load(NPY_FOLDER+"%s_mask.npy"%fname)
             if maski.shape != LON.T.shape:
-                print(maski.shape, LON.shape)
                 raise ValueError("mask has incorrect shape")
         else:
             raise ValueError("load is not enabled")
