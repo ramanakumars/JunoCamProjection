@@ -26,6 +26,30 @@ def initializer():
     """Ignore CTRL+C in the worker process."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
+def lonlat_to_thetaphi(lon, lat):
+    theta = np.radians(90 - lat)
+
+    phi = lon.copy()
+    phi = 180 - phi
+    phi = np.radians(phi)
+
+    return theta, phi
+
+def lonlat_to_xyz(lon, lat):
+    theta = np.radians(lat)
+
+    phi = lon.copy()
+    phi = 180 - phi
+    phi = np.radians(phi)
+
+    x = np.zeros(len(phi))
+    y = np.zeros(len(phi))
+    z = np.zeros(len(phi))
+    for i, (lon, lat) in enumerate(zip(phi, theta)):
+        x[i], y[i], z[i] = spice.srfrec(599, lon, lat)   
+
+    return x, y, z
+
 def map_project_multi(files, outfile='multi_proj_raw.nc', pixres=1./25., num_procs=1, extents=None, \
                       scorr_method='fft', load=False, **kwargs):
     '''
@@ -456,6 +480,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
                                    newlat, newlon, maski, fname, \
                                    num_procs=num_procs,\
                                    load=load)
+    
     maski = np.clip(maski, 0, 1)
     for ci in range(3):
         IMG[:,:,ci] = maski*IMG[:,:,ci]
@@ -534,9 +559,7 @@ def map_project(file, long=None, latg=None, pixres=None, num_procs=1, \
         '''
         trim_size = 2
         # trim edges from this image to avoid interpolation errors
-        for jj in range(trim_size,latg.size-trim_size):
-            if os.environ.get('NO_VERBOSE') is None:
-                print("\rTrimming: [%-20s] %d/%d"%(int(jj/latg.size*20)*'=', jj, latg.size), end='')
+        for jj in tqdm.tqdm(range(trim_size,latg.size-trim_size), desc='Trimming'):
             # ignore if this column has no data (speeds up trim computation)
             if IMG[jj,:,:].max()==0:
                 continue
@@ -661,7 +684,7 @@ def project_to_uniform_grid(lon, lat, img, num_procs=1):
     ## build the inputs to the multiprocessing pipeline
     ## this will decompose the longitude grid into NLON_SLICE
     ## and the latitude grid into NLAT_SLICEs
-    for j in tqdm.tqdm(range(NLAT_SLICE)):
+    for j in range(NLAT_SLICE):
         startyind = j*nsquare_lat
         endyind   = min([nlat, (j+1)*nsquare_lat])
         for i in range(NLON_SLICE):
@@ -693,7 +716,7 @@ def project_to_uniform_grid(lon, lat, img, num_procs=1):
         i = 0
 
         ## start the multicore grid processing
-        r = pool.map_async(project_part_image, inpargs)
+        r = pool.map_async(project_part_image, inpargs, chunksize=5)
         pool.close()
 
         tasks = pool._cache[r._job]
@@ -702,22 +725,22 @@ def project_to_uniform_grid(lon, lat, img, num_procs=1):
             with tqdm.tqdm(total=ninpt) as pbar: 
                 while tasks._number_left > 0:
                     #progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
-                    pbar.n = ninpt - tasks._number_left*tasks._chunksize
+                    pbar.n = max([0, ninpt - tasks._number_left*tasks._chunksize])
                     pbar.refresh()
                     
                     #    print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
                     time.sleep(0.1)
     except Exception as e:
+        print(e)
         pool.terminate()
         pool.join()
-        raise e
         sys.exit()
     
     pool.join()
 
     return np.frombuffer(shared_IMG, dtype=float).reshape((nlat,nlon)) #np.ctypeslib.as_array(IMG_ctypes)
 
-def project_part_image(inp, method='linear'):
+def project_part_image(inp):
     '''
         Main gridding code. Interpolates the unstructured data onto
         a regular grid
@@ -750,14 +773,27 @@ def project_part_image(inp, method='linear'):
     LAT = np.asarray(shared_LAT, dtype=np.float32).\
         reshape(nlon,nlat)[startxind:endxind,startyind:endyind]
 
-    IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat, nlon))#np.ctypeslib.as_array(shared_IMG)
+    IMG = np.frombuffer(shared_IMG, dtype=float).reshape((nlat, nlon))
+
+    x, y, z = lonlat_to_xyz(lon, lat)
+    X, Y, Z = lonlat_to_xyz(LON.T.ravel(), LAT.T.ravel())
+
+    points    = np.dstack([x,y,z])[0,:]
+    newpoints = np.dstack([X,Y,Z])[0,:]
+
+    #points    = np.dstack([lon, lat])[0,:]
+    #newpoints = np.dstack([LON.T.ravel(), LAT.T.ravel()])[0,:]
 
     try:
-        imgi =  griddata((lon, lat), \
-                         img, (LON, LAT), method=method).T
+        img[np.isnan(img)] = 0.
+        imgi =  griddata(points, \
+                         img, newpoints, method='nearest', fill_value=0.).reshape(LON.T.shape)
+        #imgi =  griddata((lon, lat), \
+        #                 img, (LON, LAT), method='nearest').T
         IMG[startyind:endyind,startxind:endxind] = imgi
         #return (startxind, endxind, startyind, endyind, imgi)
     except Exception as e:
+        print(e)
         raise e
 
 def color_correction(datafile, gamma=1.0, hist_eq=True, fname=None, save=False, \
