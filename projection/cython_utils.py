@@ -53,6 +53,17 @@ project_midplane_c.argtypes = [
     array_2d_double,
     array_2d_double,
     array_3d_double,
+    array_2d_double
+]
+
+get_pixel_from_coords_c = project_c.get_pixel_from_coords
+get_pixel_from_coords_c.argtypes = [
+    array_1d_double,
+    array_1d_double,
+    ctypes.c_int,
+    ctypes.c_double,
+    array_1d_double,
+    array_2d_double,
 ]
 
 # and the spice furnish function for the library

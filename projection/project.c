@@ -22,6 +22,17 @@ struct Camera {
   double k1, k2, cx, cy, flength, psize, f1, time_bias, iframe_delay;
 };
 
+#define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+#define PBWIDTH 60
+
+void print_progress(double percentage) {
+    int val = (int) (percentage * 100);
+    int lpad = (int) (percentage * PBWIDTH);
+    int rpad = PBWIDTH - lpad;
+    fprintf(stdout, "\r%3d%% [%.*s%*s]", val, lpad, PBSTR, rpad, "");
+    fflush(stdout);
+}
+
 // subtract two 3D vectors: out = x - y
 void subtract3D(double *x, double *y, double *out) {
   for (int i = 0; i < 3; i++) {
@@ -276,11 +287,10 @@ void process(double eti, int cam, double *cam2jup, double *lon, double *lat,
 }
 
 void project_midplane(double eti, int cam, double tmid, double *lon,
-                      double *lat, double *incid, double *emis, double *coords) {
+                      double *lat, double *incid, double *emis, double *coords, double *fluxcal) {
   double pix[2], pix_transformed[2], spoint[3], srfvec[3], pixvec[3], scloc[3],
       vec_transformed[3], vec_iau[3], temp[3][3], *pxfrm_mid, *pxfrm_iau, disti,
-      loni, lati, phase, inc, emission, trgepoch, lt, plate_scale, ang_size,
-      footprint;
+      loni, lati, phase, inc, emission, trgepoch, lt, plate_scale, cosalpha;
   int found;
 
   struct Camera camera, cam0;
@@ -312,6 +322,8 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
       pix[1] = jj;
       pix2vec(&camera, pix, pixvec);
 
+      cosalpha = pixvec[2] / sqrtf(pixvec[0] * pixvec[0] + pixvec[1] * pixvec[1] + pixvec[2] * pixvec[2]);
+
       matmul3D(pxfrm_mid, pixvec, vec_transformed);
       matmul3D(pxfrm_iau, pixvec, vec_iau);
 
@@ -328,14 +340,6 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
         ilumin_c("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN+S", "JUNO",
                  spoint, &trgepoch, srfvec, &phase, &inc, &emission);
 
-        // lambertian correction
-        // scorri = 1./inclin;
-        // scorri = 2.*inclin/(emis + inclin);
-
-        disti = (spoint[0] - scloc[0]) * (spoint[0] - scloc[0]);
-        disti += (spoint[1] - scloc[1]) * (spoint[1] - scloc[1]);
-        disti += (spoint[2] - scloc[2]) * (spoint[2] - scloc[2]);
-
         vec2pix(&cam0, vec_transformed, pix_transformed);
 
         lat[jj * FRAME_WIDTH + ii] = lati * 180. / M_PI;
@@ -344,7 +348,46 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
         coords[(jj * FRAME_WIDTH + ii) * 2 + 1] = pix_transformed[1];
         incid[jj * FRAME_WIDTH + ii] = inc;
         emis[jj * FRAME_WIDTH + ii] = emission;
+        fluxcal[jj * FRAME_WIDTH + ii] = (M_PI / 4.) * pow((aperture / focal_length) * cosalpha * cosalpha, 2);
       }
     }
   }
+}
+
+
+void get_pixel_from_coords(double *lon, double *lat, int npoints, double et, double *extents, double *pix) {
+    double scloc[3], temp[3][3], spoint[3], dvec[3], dvec_jcam[3], pixi[2],
+             lt, pxfrm[9], x0, x1, y0, y1, percentage;
+    struct Camera cam0;
+    initialize_camera(&cam0, 1);
+
+    x0 = extents[0]; x1 = extents[1];
+    y0 = extents[2]; y1 = extents[3];
+
+    spkpos_c("JUNO", et, "IAU_JUPITER", "CN+S", "JUPITER", scloc, &lt);
+    pxform_c("IAU_JUPITER", "JUNO_JUNOCAM", et, temp);
+    for (int jj = 0; jj < 3; jj++) {
+        for (int ii = 0; ii < 3; ii++) {
+            pxfrm[jj * 3 + ii] = temp[jj][ii];
+        }
+    }
+
+    for(int i=0; i<npoints; i++) {
+        double lati, loni;
+        lati = lat[i];
+        loni = lon[i];
+        srfrec_c(JUPITER, loni, lati, spoint);
+        subtract3D(spoint, scloc, dvec);
+
+        matmul3D(pxfrm, dvec, dvec_jcam);
+        vec2pix(&cam0, dvec_jcam, pixi);
+
+        if ((((dvec[0] * spoint[0] + dvec[1] * spoint[1] + dvec[2] * spoint[2]) < 0)) & (pixi[0] >= x0) & (pixi[0] <= x1) & (pixi[1] >= y0) & (pixi[1] <= y1)) {
+            pix[i * 2] = pixi[0];
+            pix[i * 2 + 1] = pixi[1];
+        }
+
+        percentage = (double) i / npoints;
+        print_progress(percentage);
+    }
 }

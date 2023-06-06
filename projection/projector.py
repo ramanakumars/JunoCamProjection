@@ -13,9 +13,10 @@ from skimage import io
 import tqdm
 from ftplib import FTP
 from .globals import FRAME_HEIGHT, FRAME_WIDTH, initializer
-from .cython_utils import furnish_c, project_midplane_c
+from .cython_utils import furnish_c, project_midplane_c, get_pixel_from_coords_c
 from .camera_funcs import CameraModel
 import sys
+import healpy as hp
 
 
 # speed of light
@@ -253,8 +254,11 @@ class Projector:
         for kernel in kernels:
             kernel_local = KERNEL_DATAFOLDER + kernel
             filesize = ftp.size(kernel)
-            if os.path.isfile(kernel_local) & (os.path.getsize(kernel_local) == filesize):
-                continue
+            try:
+                if os.path.isfile(kernel_local) & (os.path.getsize(kernel_local) == filesize):
+                    continue
+            except FileNotFoundError:
+                pass
             print(f"Downloading {kernel}", flush=True)
 
             with open(kernel_local, 'wb') as kerfile:
@@ -524,7 +528,7 @@ class Projector:
                 ]
                 framei = framei / flati
                 self.image[startrow:endrow, :] = framei / self.exposure
-                inpargs.append((n, c, np.mean(self.et)))
+                inpargs.append([self.et[n, c], n, c, np.mean(self.et)])
 
         with multiprocessing.Pool(
             processes=num_procs, initializer=initializer
@@ -538,7 +542,7 @@ class Projector:
                 # run the projection using the multiprocessing driver
                 with tqdm.tqdm(total=ninpt, desc='Projecting framelets') as pbar:
                     while tasks._number_left > 0:
-                        pbar.n = ninpt - tasks._number_left * tasks._chunksize
+                        pbar.n = np.max([0, ninpt - tasks._number_left * tasks._chunksize])
                         pbar.refresh()
 
                         time.sleep(0.1)
@@ -555,13 +559,14 @@ class Projector:
         lons = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         emission = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
         incidence = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
+        fluxcal = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
         results = r.get()
 
         # fetch the coordinates and the image values
         for jj in range(len(inpargs)):
-            loni, lati, inci, emisi, coordsi = results[jj]
-            i, ci = inpargs[jj][:2]
+            loni, lati, inci, emisi, coordsi, fluxcali = results[jj]
+            _, i, ci, _ = inpargs[jj]
             startrow = 3 * FRAME_HEIGHT * i + ci * FRAME_HEIGHT
             endrow = 3 * FRAME_HEIGHT * i + (ci + 1) * FRAME_HEIGHT
 
@@ -570,7 +575,7 @@ class Projector:
             rawimg[i, ci, :, :] = self.fullimg[startrow:endrow, :]
 
             coords[i, ci, :] = coordsi
-            imgvals[i, ci, :] = decompimg[i, ci, :, :]
+            imgvals[i, ci, :] = decompimg[i, ci, :, :] / fluxcali
             lats[i, ci, :] = lati
             lons[i, ci, :] = loni
 
@@ -578,21 +583,80 @@ class Projector:
             emission[i, ci, :] = emisi
             incidence[i, ci, :] = inci
 
-        return lons, lats, incidence, emission, coords, imgvals
+            # geometry correction
+            fluxcal[i, ci, :] = fluxcali
+
+        return lons, lats, incidence, emission, fluxcal, coords, imgvals
 
     def _project_to_midplane(self, inpargs):
-        n, c, tmid = inpargs
-        eti = self.et[n, c]
+        eti, n, c, tmid = inpargs
 
         coords = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 2))
         lat = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
         lon = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
         incidence = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
         emission = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        fluxcal = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
 
-        project_midplane_c(eti, c, tmid, lon, lat, incidence, emission, coords)
+        project_midplane_c(eti, c, tmid, lon, lat, incidence, emission, coords, fluxcal)
 
-        return lon, lat, incidence, emission, coords
+        return lon, lat, incidence, emission, coords, fluxcal
+
+    def project_to_healpix(self, nside, coords, imgvals):
+        # get the image extents in pixel coordinate space
+        x0 = np.nanmin(coords[:, :, 0])
+        x1 = np.nanmax(coords[:, :, 0])
+        y0 = np.nanmin(coords[:, :, 1])
+        y1 = np.nanmax(coords[:, :, 1])
+
+        extents = np.array([x0, x1, y0, y1])
+
+        # now we construct the map grid
+        longrid, latgrid = hp.pix2ang(nside, list(range(hp.nside2npix(nside))), lonlat=True)
+
+        pix = np.nan * np.zeros((longrid.size, 2))
+
+        # this assumes the midplane mode where the coordinates
+        # are using the Green band camera
+        et = np.mean(self.et)
+
+        # get the spacecraft location and transformation to and from the JUNOCAM coordinates
+        '''
+        scloc, _ = spice.spkpos("JUNO", et, "IAU_JUPITER", "CN+S", "JUPITER")
+        pxfrm = spice.pxform("IAU_JUPITER", "JUNO_JUNOCAM", et)
+
+        for i, (lon, lat) in enumerate(
+            tqdm.tqdm(
+                zip(longrid, latgrid), total=len(longrid), desc='Building pixel coordinates'
+            )
+        ):
+            spoint = spice.srfrec(599, np.radians(lon), np.radians(lat))
+            dvec = spoint - scloc
+
+            dvec_jcam = np.dot(pxfrm, dvec)
+            pixi = cam0.vec2pix(dvec_jcam)
+
+            if (
+                    (np.dot(dvec, spoint) < 0) &
+                    (pixi[0] >= x0) &
+                    (pixi[0] <= x1) &
+                    (pixi[1] >= y0) &
+                    (pixi[1] <= y1)
+            ):
+                pix[i, :] = pixi
+        '''
+
+        get_pixel_from_coords_c(np.radians(longrid), np.radians(latgrid), longrid.size, et, extents, pix)
+
+        # get the locations that JunoCam observed
+        inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
+        pix = pix[inds]
+        pixel_inds = hp.ang2pix(nside, longrid[inds], latgrid[inds], lonlat=True)
+
+        # finally, project the image onto the healpix grid
+        m = create_image_from_grid(coords, imgvals, pix, pixel_inds, longrid.shape, n_neighbor=2)
+
+        return m
 
 
 def apply_lommel_seeliger(imgvals, incidence, emission):
@@ -600,11 +664,11 @@ def apply_lommel_seeliger(imgvals, incidence, emission):
         Apply the Lommel-Seeliger correction for incidence
     '''
     # apply Lommel-Siegler correction
-    mu0 = np.clip(np.cos(incidence), 0, 1)
-    mu = np.clip(np.cos(emission), 0, 1)
-    corr = 2. * mu0 / (mu + mu0)
-    corr[corr < 1.e-5] = np.nan
-    imgvals = imgvals / corr
+    mu0 = np.cos(incidence)
+    mu = np.cos(emission)
+    corr = 1. / (mu + mu0)
+    corr[corr < 1.e-1] = np.nan
+    imgvals = imgvals * corr
 
     return imgvals
 
@@ -671,12 +735,17 @@ def create_image_from_grid(coords, imgvals, pix, inds, img_shape, n_neighbor=5, 
     IMG = np.zeros((*img_shape, 3))
     # loop through each point observed by JunoCam and assign the pixel value
     for k, ind in enumerate(tqdm.tqdm(inds, desc='Building image')):
-        j, i = np.unravel_index(ind, img_shape)
+        if len(img_shape) == 2:
+            j, i = np.unravel_index(ind, img_shape)
 
-        # do the weighted average for each filter
-        IMG[j, i, 0] = R_vals[k]
-        IMG[j, i, 1] = G_vals[k]
-        IMG[j, i, 2] = B_vals[k]
+            # do the weighted average for each filter
+            IMG[j, i, 0] = R_vals[k]
+            IMG[j, i, 1] = G_vals[k]
+            IMG[j, i, 2] = B_vals[k]
+        else:
+            IMG[ind, 0] = R_vals[k]
+            IMG[ind, 1] = G_vals[k]
+            IMG[ind, 2] = B_vals[k]
 
     IMG[~np.isfinite(IMG)] = 0.
 
