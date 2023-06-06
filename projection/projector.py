@@ -18,10 +18,6 @@ from .camera_funcs import CameraModel
 import sys
 import healpy as hp
 
-
-# speed of light
-c_light = 3.0e5
-
 # for decompanding -- taken from Kevin Gill's github page
 SQROOT = np.array(
     (
