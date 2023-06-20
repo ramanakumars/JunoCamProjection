@@ -1,343 +1,313 @@
-import json, glob, re
-import time
+import numpy as np
+import json
+import re
 from skimage import feature
 from sklearn.metrics import pairwise_distances
-from .mosaic_funcs import *
+from sklearn.neighbors import NearestNeighbors
+import os
+import time
+import matplotlib.pyplot as plt
+import multiprocessing
+import spiceypy as spice
+from skimage import io
+import tqdm
+from ftplib import FTP
+from .globals import FRAME_HEIGHT, FRAME_WIDTH, initializer
+from .cython_utils import furnish_c, project_midplane_c, get_pixel_from_coords_c
+from .camera_funcs import CameraModel
+from .frameletdata import FrameletData
+import sys
+import healpy as hp
 
-# speed of light
-c_light = 3.e5
-
-## for decompanding -- taken from Kevin Gill's github page 
-SQROOT = np.array((0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-                   16, 17, 18, 19, 20, 21, 22, 23, 25, 27, 29, 31, 33, 35, 37, 39,
-                   41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63, 67, 71, 75,
-                   79, 83, 87, 91, 95, 99, 103, 107, 111, 115, 119, 123, 127, 131,
-                   135, 139, 143, 147, 151, 155, 159, 163, 167, 171, 175, 179,
-                   183, 187, 191, 195, 199, 203, 207, 211, 215, 219, 223, 227,
-                   231, 235, 239, 243, 247, 255, 263, 271, 279, 287, 295, 303,
-                   311, 319, 327, 335, 343, 351, 359, 367, 375, 383, 391, 399,
-                   407, 415, 423, 431, 439, 447, 455, 463, 471, 479, 487, 495,
-                   503, 511, 519, 527, 535, 543, 551, 559, 567, 575, 583, 591,
-                   599, 607, 615, 623, 631, 639, 647, 655, 663, 671, 679, 687,
-                   695, 703, 711, 719, 727, 735, 743, 751, 759, 767, 775, 783,
-                   791, 799, 807, 815, 823, 831, 839, 847, 855, 863, 871, 879,
-                   887, 895, 903, 911, 919, 927, 935, 943, 951, 959, 967, 975,
-                   983, 991, 999, 1007, 1023, 1039, 1055, 1071, 1087, 1103, 1119,
-                   1135, 1151, 1167, 1183, 1199, 1215, 1231, 1247, 1263, 1279,
-                   1295, 1311, 1327, 1343, 1359, 1375, 1391, 1407, 1439, 1471,
-                   1503, 1535, 1567, 1599, 1631, 1663, 1695, 1727, 1759, 1791,
-                   1823, 1855, 1887, 1919, 1951, 1983, 2015, 2047, 2079, 2111,
-                   2143, 2175, 2207, 2239, 2271, 2303, 2335, 2367, 2399, 2431,
-                   2463, 2495, 2527, 2559, 2591, 2623, 2655, 2687, 2719, 2751,
-                   2783, 2815, 2847, 2879), dtype=np.double)
+# for decompanding -- taken from Kevin Gill's github page
+SQROOT = np.array(
+    (
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+        19, 20, 21, 22, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 43, 45,
+        47, 49, 51, 53, 55, 57, 59, 61, 63, 67, 71, 75, 79, 83, 87, 91,
+        95, 99, 103, 107, 111, 115, 119, 123, 127, 131, 135, 139, 143, 147,
+        151, 155, 159, 163, 167, 171, 175, 179, 183, 187, 191, 195, 199, 203,
+        207, 211, 215, 219, 223, 227, 231, 235, 239, 243, 247, 255, 263, 271,
+        279, 287, 295, 303, 311, 319, 327, 335, 343, 351, 359, 367, 375, 383,
+        391, 399, 407, 415, 423, 431, 439, 447, 455, 463, 471, 479, 487, 495,
+        503, 511, 519, 527, 535, 543, 551, 559, 567, 575, 583, 591, 599, 607,
+        615, 623, 631, 639, 647, 655, 663, 671, 679, 687, 695, 703, 711, 719,
+        727, 735, 743, 751, 759, 767, 775, 783, 791, 799, 807, 815, 823, 831,
+        839, 847, 855, 863, 871, 879, 887, 895, 903, 911, 919, 927, 935, 943,
+        951, 959, 967, 975, 983, 991, 999, 1007, 1023, 1039, 1055, 1071,
+        1087, 1103, 1119, 1135, 1151, 1167, 1183, 1199, 1215, 1231, 1247,
+        1263, 1279, 1295, 1311, 1327, 1343, 1359, 1375, 1391, 1407, 1439,
+        1471, 1503, 1535, 1567, 1599, 1631, 1663, 1695, 1727, 1759, 1791,
+        1823, 1855, 1887, 1919, 1951, 1983, 2015, 2047, 2079, 2111, 2143,
+        2175, 2207, 2239, 2271, 2303, 2335, 2367, 2399, 2431, 2463, 2495,
+        2527, 2559, 2591, 2623, 2655, 2687, 2719, 2751, 2783, 2815, 2847,
+        2879),
+    dtype=np.double
+)
 
 
 def decompand(image):
-    '''
-        Decompands the image from the 8-bit in the public release
-        to the original 12-bit shot by JunoCam
+    """
+    Decompands the image from the 8-bit in the public release
+    to the original 12-bit shot by JunoCam
 
-        Parameters
-        ----------
-        image : numpy.ndarray
-            8-bit input image
+    Parameters
+    ----------
+    image : numpy.ndarray
+        8-bit input image
 
-        Outputs
-        -------
-        data : numpy.ndarray
-            Original 12-bit image
-    '''
-    data = np.array(255.*image, dtype=float)
+    Outputs
+    -------
+    data : numpy.ndarray
+        Original 12-bit image
+    """
+    data = np.array(255 * image, dtype=np.uint8)
     ny, nx = data.shape
 
-    data2 = data.copy()
-    for j in range(ny):
-        for i in range(nx):
-            data2[j,i] = SQROOT[int(round(data[j,i]))]
+    def get_sqrt(x):
+        return SQROOT[x]
+    v_get_sqrt = np.vectorize(get_sqrt)
+
+    data2 = v_get_sqrt(data)
 
     return data2
 
-class Projector():
-    '''
-        The main projector class that determines the surface intercept points
-        of each pixel in a JunoCam image
 
-        Methods
-        -------
-        load_kernels: Determines and loads the required SPICE kernels for processing
-        process_n_c : Projects an individual framelet in the JunoCam raw image
-        process     : Driver for the projection that handles parallel processing
-    '''
-    def __init__(self, imagefolder, meta, kerneldir='.'):
-        with open(meta, 'r') as metafile:
+class Projector:
+    """
+    The main projector class that determines the surface intercept points
+    of each pixel in a JunoCam image
+
+    Methods
+    -------
+    load_kernels: Determines and loads the required SPICE kernels
+        for processing
+    process_n_c : Projects an individual framelet in the JunoCam raw image
+    process     : Driver for the projection that handles
+        parallel processing
+    """
+
+    def __init__(self, imagefolder, meta, kerneldir="."):
+        with open(meta, "r") as metafile:
             self.metadata = json.load(metafile)
 
-        self.start_utc = self.metadata['START_TIME']
-        self.fname     = self.metadata['FILE_NAME'].replace('-raw.png','')
-        intframe_delay = self.metadata['INTERFRAME_DELAY'].split(' ')
-        
-        self.fullimg  = plt.imread(imagefolder+"%s-raw.png"%self.fname)
+        self.start_utc = self.metadata["START_TIME"]
+        self.fname = self.metadata["FILE_NAME"].replace("-raw.png", "")
+        intframe_delay = self.metadata["INTERFRAME_DELAY"].split(" ")
+
+        self.fullimg = plt.imread(imagefolder + "%s-raw.png" % self.fname)
 
         # ignore color channels in the image
-        if len(self.fullimg.shape)==3:
+        if len(self.fullimg.shape) == 3:
             self.fullimg = self.fullimg.mean(axis=-1)
 
-        self.sclat = float(self.metadata['SUB_SPACECRAFT_LATITUDE'])
-        self.sclon = float(self.metadata['SUB_SPACECRAFT_LONGITUDE'])
-        
+        self.sclat = float(self.metadata["SUB_SPACECRAFT_LATITUDE"])
+        self.sclon = float(self.metadata["SUB_SPACECRAFT_LONGITUDE"])
+
         # get the exposure and convert to seconds
-        self.exposure = float(self.metadata['EXPOSURE_DURATION'].replace('<ms>','').strip())/1.e3
+        self.exposure = (
+            float(
+                self.metadata["EXPOSURE_DURATION"].replace("<ms>", "").strip()
+            )
+            / 1.0e3
+        )
 
-        self.frame_delay = float(intframe_delay[0]) 
+        self.frame_delay = float(intframe_delay[0])
 
-        ## number of strips 
-        self.nframelets  = int(self.metadata['LINES']/FRAME_HEIGHT)
-        ## number of RGB frames 
-        self.nframes     = int(self.nframelets/3)
-        
-        self.load_kernels(kerneldir)
-        
-        self.re, _, self.rp = spice.bodvar(spice.bodn2c('JUPITER'), 'RADII', 3)
-        self.flattening = (self.re - self.rp)/self.re
+        # number of strips
+        self.nframelets = int(self.metadata["LINES"] / FRAME_HEIGHT)
+        # number of RGB frames
+        self.nframes = int(self.nframelets / 3)
 
-        ## calculate the start time 
-        self.start_et    = spice.str2et(self.start_utc)
+        self.download_kernels(kerneldir)
 
-        self.savefolder = "%s_proj/"%self.fname
+        self.re, _, self.rp = spice.bodvar(spice.bodn2c("JUPITER"), "RADII", 3)
+        self.flattening = (self.re - self.rp) / self.re
 
-        self.jitter = 0.
+        # calculate the start time
+        self.start_et = spice.str2et(self.start_utc)
 
-    def load_kernels(self, KERNEL_DATAFOLDER):
-        '''
-            Determines and loads the required SPICE data kernels
-            to project and process the current image
+        self.savefolder = "%s_proj/" % self.fname
 
-            Parameters
-            ----------
-            KERNEL_DATAFOLDER : string
-                path to the location of the Juno kernels
+        self.find_jitter(jitter_max=120)
 
-            Raises
-            ------
-            AssertionError
-                if no kernels were found for the date range
-        '''
-        ## find and load the kernels for a specific date 
-        iks   = sorted(glob.glob(KERNEL_DATAFOLDER+"ik/juno_junocam_v*.ti"))
-        cks   = sorted(glob.glob(KERNEL_DATAFOLDER+"ck/juno_sc_*.bc"))
-        spks1 = sorted(glob.glob(KERNEL_DATAFOLDER+"spk/spk_*.bsp"))
-        spks2 = sorted(glob.glob(KERNEL_DATAFOLDER+"spk/jup*.bsp"))
-        spks3 = sorted(glob.glob(KERNEL_DATAFOLDER+"spk/de*.bsp"))
-        pcks  = sorted(glob.glob(KERNEL_DATAFOLDER+"pck/pck*.tpc"))
-        fks   = sorted(glob.glob(KERNEL_DATAFOLDER+"fk/juno_v*.tf"))
-        sclks = sorted(glob.glob(KERNEL_DATAFOLDER+"sclk/JNO_SCLKSCET.*.tsc"))
-        lsks  = sorted(glob.glob(KERNEL_DATAFOLDER+"lsk/naif*.tls"))
+        self.et = np.zeros((self.nframes, 3))
 
-        year, month, day = self.start_utc.split('-')
+        for n in range(self.nframes):
+            for c in range(3):
+                ci = CameraModel(c)
+                self.et[n, c] = self.start_et + ci.time_bias + self.jitter +\
+                    (self.frame_delay + ci.iframe_delay) * n
+
+    def download_kernels(self, KERNEL_DATAFOLDER):
+        if KERNEL_DATAFOLDER[-1] != '/':
+            KERNEL_DATAFOLDER += '/'
+
+        if not os.path.exists(KERNEL_DATAFOLDER):
+            os.mkdir(KERNEL_DATAFOLDER)
+
+        for folder in ['ik', 'ck', 'spk', 'pck', 'fk', 'lsk', 'sclk']:
+            if not os.path.exists(KERNEL_DATAFOLDER + folder):
+                os.mkdir(KERNEL_DATAFOLDER + folder)
+
+        ftp = FTP('naif.jpl.nasa.gov')
+        ftp.login()  # login anonymously
+        ftp.cwd('pub/naif/JUNO/kernels/')
+
+        iks = sorted(ftp.nlst("ik/juno_junocam_v*.ti"))
+        cks = sorted(ftp.nlst("ck/juno_sc_*.bc"))
+        spks1 = sorted(ftp.nlst("spk/spk_*.bsp"))
+        spks2 = sorted(ftp.nlst("spk/jup*.bsp"))
+        spks3 = sorted(ftp.nlst("spk/de*.bsp"))
+        spks4 = sorted(ftp.nlst("spk/juno_struct*.bsp"))
+        pcks = sorted(ftp.nlst("pck/pck*.tpc"))
+        fks = sorted(ftp.nlst("fk/juno_v*.tf"))
+        sclks = sorted(ftp.nlst("sclk/JNO_SCLKSCET.*.tsc"))
+        lsks = sorted(ftp.nlst("lsk/naif*.tls"))
+
+        year, month, day = self.start_utc.split("-")
         yy = year[2:]
         mm = month
         dd = day[:2]
 
-        intdate = int("%s%s%s"%(yy,mm,dd))
+        intdate = int("%s%s%s" % (yy, mm, dd))
 
         kernels = []
 
-        ## find the ck and spk kernels for the given date 
-        ckpattern = r'juno_sc_rec_([0-9]{6})_([0-9]{6})\S*'
+        # find the ck and spk kernels for the given date
+        ckpattern = r"juno_sc_rec_([0-9]{6})_([0-9]{6})\S*"
         nck = 0
         for ck in cks:
             fname = os.path.basename(ck)
             groups = re.findall(ckpattern, fname)
-            if(len(groups) == 0):
+            if len(groups) == 0:
                 continue
             datestart, dateend = groups[0]
 
-            if( (int(datestart) <= intdate) & (int(dateend) >= intdate) ):
+            if (int(datestart) <= intdate) & (int(dateend) >= intdate):
                 kernels.append(ck)
                 nck += 1
-        
-        ''' use the predicted kernels if there are no rec '''
-        if(nck == 0):
+
+        """ use the predicted kernels if there are no rec """
+        if nck == 0:
             print("Using predicted CK")
-            ckpattern = r'juno_sc_pre_([0-9]{6})_([0-9]{6})\S*'
+            ckpattern = r"juno_sc_pre_([0-9]{6})_([0-9]{6})\S*"
             for ck in cks:
                 fname = os.path.basename(ck)
                 groups = re.findall(ckpattern, fname)
-                if(len(groups) == 0):
+                if len(groups) == 0:
                     continue
                 datestart, dateend = groups[0]
 
-                if( (int(datestart) <= intdate) & (int(dateend) >= intdate) ):
+                if (int(datestart) <= intdate) & (int(dateend) >= intdate):
                     kernels.append(ck)
                     nck += 1
 
-        spkpattern = r'spk_rec_([0-9]{6})_([0-9]{6})\S*'
+        spkpattern = r"spk_rec_([0-9]{6})_([0-9]{6})\S*"
         nspk = 0
         for spk in spks1:
             fname = os.path.basename(spk)
             groups = re.findall(spkpattern, fname)
-            if(len(groups) == 0):
+            if len(groups) == 0:
                 continue
             datestart, dateend = groups[0]
 
-            if( (int(datestart) <= intdate) & (int(dateend) >= intdate) ):
+            if (int(datestart) <= intdate) & (int(dateend) >= intdate):
                 kernels.append(spk)
                 nspk += 1
 
-        ''' use the predicted kernels if there are no rec '''
-        if(nspk == 0):
+        """ use the predicted kernels if there are no rec """
+        if nspk == 0:
             print("Using predicted SPK")
-            spkpattern = r'spk_pre_([0-9]{6})_([0-9]{6})\S*'
+            spkpattern = r"spk_pre_([0-9]{6})_([0-9]{6})\S*"
             for spk in spks1:
                 fname = os.path.basename(spk)
                 groups = re.findall(spkpattern, fname)
-                if(len(groups) == 0):
+                if len(groups) == 0:
                     continue
                 datestart, dateend = groups[0]
 
-                if( (int(datestart) <= intdate) & (int(dateend) >= intdate) ):
+                if (int(datestart) <= intdate) & (int(dateend) >= intdate):
                     kernels.append(spk)
                     nspk += 1
 
-        #if(nck*nspk == 0):
+        # if(nck*nspk == 0):
         #    print("ERROR: Kernels not found for the date range!")
-        assert nck*nspk > 0, "Kernels not found for the given date range!"
+        assert nck * nspk > 0, "Kernels not found for the given date range!"
 
-        ## load the latest updates for these 
+        # load the latest updates for these
         kernels.append(iks[-1])
         kernels.append(spks2[-1])
         kernels.append(spks3[-1])
+        kernels.append(spks4[-1])
         kernels.append(pcks[-1])
         kernels.append(fks[-1])
         kernels.append(sclks[-1])
         kernels.append(lsks[-1])
-        kernels.append(KERNEL_DATAFOLDER+"spk/juno_rec_orbit.bsp")
-        kernels.append(KERNEL_DATAFOLDER+"spk/juno_pred_orbit.bsp")
-        kernels.append(sorted(glob.glob(KERNEL_DATAFOLDER+"spk/juno_struct*.bsp"))[-1])
+        kernels.append("spk/juno_rec_orbit.bsp")
+        kernels.append("spk/juno_pred_orbit.bsp")
 
-        self.kernels = kernels
-        for kernel in self.kernels:
-            furnish_c(kernel.encode('ascii'))
-            spice.furnsh(kernel)
+        self.kernels = []
+        for kernel in kernels:
+            kernel_local = KERNEL_DATAFOLDER + kernel
+            filesize = ftp.size(kernel)
+            try:
+                if os.path.isfile(kernel_local) & (os.path.getsize(kernel_local) == filesize):
+                    continue
+            except FileNotFoundError:
+                pass
+            print(f"Downloading {kernel}", flush=True)
 
-    def process_n_c(self, inp):
-        '''
-            Project a given frame and filter
-            used in the multi-core version
+            with open(kernel_local, 'wb') as kerfile:
+                ftp.retrbinary(f"RETR {kernel}", kerfile.write)
 
-            Parameters
-            ----------
-            inp : tuple
-                framelet number and color index
+        for kernel in kernels:
+            kernel_local = KERNEL_DATAFOLDER + kernel
+            furnish_c(kernel_local.encode("ascii"))
+            spice.furnsh(kernel_local)
 
-            Outputs
-            -------
-            lats : numpy.ndarray
-                array of latitudes in the same shape as the framelet (128,1648)
-            lons : numpy.ndarray
-                array of longitudes in the same shape as the framelet (128,1648)
-            scloc : numpy.ndarray
-                spacecraft position during the frame -- shape (3,)
-            eti : double
-                epoch of the spacecraft's observation for the given frame
-            pixres : numpy.ndarray
-                array of spatial resolutions of that pixel of shape (128,1648)
-        '''
-        n, ci = inp
-        try:
-            self.latmin =  1000.
-            self.latmax = -1000.
-            self.lonmin =  1000.
-            self.lonmax = -1000.
-
-            cami  = CameraModel(ci)
-            start = 3*FRAME_HEIGHT*n+ci*FRAME_HEIGHT
-            end   = 3*FRAME_HEIGHT*n+(ci+1)*FRAME_HEIGHT
-            frame = self.fullimg[start:end,:]
-            eti   = self.start_et + cami.time_bias + self.jitter + \
-                (self.frame_delay+cami.iframe_delay)*n
-            '''
-                calculate the spacecraft position in the 
-                Jupiter reference frame
-            '''
-            scloc, _ = spice.spkpos('JUNO', eti, 'IAU_JUPITER', 'CN+S', 'JUPITER')
-
-            '''
-                calculate the transformation from instrument 
-                to jupiter barycenter
-            '''
-            cam2jup = spice.pxform('JUNO_JUNOCAM', 'IAU_JUPITER', eti)
-            
-            lats = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-            lons = -1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-            #solar_corr = np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-            incid  =  1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-            emis     =  1000.*np.ones((FRAME_HEIGHT, FRAME_WIDTH))
-            flux_cal =  np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-            
-            process_c(eti, ci, cam2jup.flatten(), lons, lats, incid, emis, flux_cal)
-
-            #frame = decompand(frame[:])#*solar_corr[:]
-            ''' 
-                find the resolution for each pixel and then calculate
-                the finest resolution of the slice
-            '''
-
-            dlats = np.gradient(lats)
-            dlons = np.gradient(lons)
-            
-            dlat = (dlats[0] + dlats[1])/2.
-            dlon = (dlons[0] + dlons[1])/2.
-            dpix = np.sqrt(dlat**2. + dlon**2.)
-
-            if(np.max(dpix) == 0.):
-                pixres = 0.
-            else:
-                pixres = dpix[dpix>0.].min()
-            return (lats, lons, scloc, eti, pixres, incid, emis, flux_cal)
-        except Exception as e:
-            raise(e)
-            return
+            self.kernels.append(kernel_local)
 
     def find_jitter(self, jitter_max=25, plot=False):
+        threshold = 0.1 * self.fullimg.max()
 
-        threshold = 0.1*self.fullimg.max()
-
-        for nci in range(self.nframes*3):
+        for nci in range(self.nframes * 3):
             # find whether the planet limb is in now
             # approximating this as the first time the planet is seen
             # in the image, which is generally true..
 
-            n  = nci//3
-            ci = nci%3
-            
+            n = nci // 3
+            ci = nci % 3
 
-            start = 3*FRAME_HEIGHT*n+ci*FRAME_HEIGHT
-            end   = 3*FRAME_HEIGHT*n+(ci+1)*FRAME_HEIGHT
-            frame = self.fullimg[start:end,:]
-            if len(frame[frame>threshold]) > 5000:
+            start = 3 * FRAME_HEIGHT * n + ci * FRAME_HEIGHT
+            end = 3 * FRAME_HEIGHT * n + (ci + 1) * FRAME_HEIGHT
+            frame = self.fullimg[start:end, :]
+            if len(frame[frame > threshold]) > 5000:
                 # make sure that the limb is also in the image
                 # we want to find a frame where both the predicted limb
-                # with no jitter and the actual limb are visible so that 
+                # with no jitter and the actual limb are visible so that
                 # the offset we determine is small
-                cami  = CameraModel(ci)
-                eti   = self.start_et + cami.time_bias + \
-                    (self.frame_delay+cami.iframe_delay)*n
+                cami = CameraModel(ci)
+                eti = (
+                    self.start_et
+                    + cami.time_bias
+                    + (self.frame_delay + cami.iframe_delay) * n
+                )
                 limb_pts = self.get_limb(eti, cami)
 
-                # bad test image if the limb is not fully visible 
+                # bad test image if the limb is not fully visible
                 # in the frame
                 if len(limb_pts) > 5:
                     break
 
         # create the mask of the visible jupiter in the image
-        imgmask  = np.zeros_like(frame)
+        imgmask = np.zeros_like(frame)
         imgmask[frame > threshold] = 1
-        
+
         if plot:
             plt.figure(dpi=200)
-            plt.imshow(frame, cmap='gray')
-            plt.plot(limb_pts[:,0], limb_pts[:,1], 'r-')
+            plt.imshow(frame, cmap="gray")
+            plt.plot(limb_pts[:, 0], limb_pts[:, 1], "r-")
             plt.draw()
             plt.pause(0.001)
 
@@ -345,242 +315,348 @@ class Projector():
         sigma = 8
         npoints = 0
         while npoints < 10:
-            limb_img = np.asarray(feature.canny(frame[:,24:1630], sigma=sigma), dtype=float)
-            limb_img_points = np.dstack(np.where(limb_img==1)[::-1])[0]
-            limb_img_points[:,0] += 24
+            limb_img = np.asarray(
+                feature.canny(frame[:, 24:1630], sigma=sigma), dtype=float
+            )
+            limb_img_points = np.dstack(np.where(limb_img == 1)[::-1])[0]
+            limb_img_points[:, 0] += 24
             npoints = len(limb_img_points)
             sigma -= 1
 
         distances = pairwise_distances(limb_pts, limb_img_points)
 
         if plot:
-            plt.plot(limb_img_points[:,0], limb_img_points[:,1], 'g-')
-
+            plt.plot(limb_img_points[:, 0], limb_img_points[:, 1], "g-")
 
         # we've found our limb. now we need to find
         # the actual limb from SPICE
-        cami  = CameraModel(ci)
+        cami = CameraModel(ci)
 
-        jitter_list = np.arange(-jitter_max, jitter_max, 1)/1.e3
+        jitter_list = np.arange(-jitter_max, jitter_max, 1) / 1.0e3
 
         min_dists = np.zeros_like(jitter_list)
 
-        for j, jitter in enumerate(jitter_list):
-            eti   = self.start_et + cami.time_bias + jitter + \
-                (self.frame_delay+cami.iframe_delay)*n
+        for j, jitter in enumerate(tqdm.tqdm(jitter_list, desc="Finding jitter")):
+            eti = self.start_et + cami.time_bias + jitter + (self.frame_delay + cami.iframe_delay) * n
 
             limbs_jcam = self.get_limb(eti, cami)
 
             if len(limbs_jcam) < 1:
-                min_dists[j] = 1.e10
+                min_dists[j] = 1.0e10
                 continue
 
             distances = pairwise_distances(limbs_jcam, limb_img_points)
 
             if plot:
                 plt.figure(dpi=200)
-                plt.imshow(frame, cmap='gray')
-                plt.plot(limbs_jcam[:,0], limbs_jcam[:,1], 'r.', markersize=0.1)
-                plt.plot(limb_img_points[:,0], limb_img_points[:,1], 'g.', markersize=0.1)
+                plt.imshow(frame, cmap="gray")
+                plt.plot(
+                    limbs_jcam[:, 0], limbs_jcam[:, 1], "r.", markersize=0.1
+                )
+                plt.plot(
+                    limb_img_points[:, 0],
+                    limb_img_points[:, 1],
+                    "g.",
+                    markersize=0.1,
+                )
                 plt.show()
 
-            if len(distances[distances<15]>5):
-                min_dists[j] = distances[distances<15.].mean()
+            if len(distances[distances < 15] > 5):
+                min_dists[j] = distances[distances < 15.0].mean()
             else:
-                min_dists[j] = 1.e10
-
-            #print(distances.min(), distances.max(), min_dists[j])
-            #plt.contour(limb_img, vmin=0.5, vmax=1.5, colors='g', linewidths=0.1)
-
+                min_dists[j] = 1.0e10
 
         self.jitter = jitter_list[min_dists.argmin()]
 
-        print("Found best jitter value of %.1f ms"%(self.jitter*1.e3))
-        
-        eti   = self.start_et + cami.time_bias + self.jitter + \
-            (self.frame_delay+cami.iframe_delay)*n
+        print("Found best jitter value of %.1f ms" % (self.jitter * 1.0e3))
+
+        eti = (
+            self.start_et
+            + cami.time_bias
+            + self.jitter
+            + (self.frame_delay + cami.iframe_delay) * n
+        )
 
         limbs_jcam = self.get_limb(eti, cami)
 
         if plot:
-            plt.plot(limbs_jcam[:,0], limbs_jcam[:,1], 'g.', markersize=0.1)
+            plt.plot(limbs_jcam[:, 0], limbs_jcam[:, 1], "g.", markersize=0.1)
             plt.show()
 
     def get_limb(self, eti, cami):
-        METHOD = 'TANGENT/ELLIPSOID'
-        CORLOC = 'ELLIPSOID LIMB'
+        METHOD = "TANGENT/ELLIPSOID"
+        CORLOC = "ELLIPSOID LIMB"
 
-        scloc, lt = spice.spkpos('JUNO', eti, 'IAU_JUPITER', 'CN+S', 'JUPITER')
+        scloc, lt = spice.spkpos("JUNO", eti, "IAU_JUPITER", "CN+S", "JUPITER")
 
         # use the sub spacecraft point as the reference vector
-        refvec, _, _ = spice.subpnt('INTERCEPT/ELLIPSOID', 'JUPITER', eti, 'IAU_JUPITER',
-                                    'CN+S', 'JUNO')
+        refvec, _, _ = spice.subpnt("INTERCEPT/ELLIPSOID", "JUPITER", eti, "IAU_JUPITER", "CN+S", "JUNO")
 
-        #print(np.degrees(spice.recpgr('JUPITER', scloc, self.re, self.flattening)[:2]), self.sclat, self.sclon)
-
-        _, _ , eplimbs, limbs_IAU = spice.limbpt(METHOD, 'JUPITER', eti, 'IAU_JUPITER', 
-                                      'CN+S', CORLOC, 'JUNO', refvec, np.radians(0.1), 
-                                      3600, 4., 0.001, 7200)
+        _, _, eplimbs, limbs_IAU = spice.limbpt(METHOD, "JUPITER", eti, "IAU_JUPITER", "CN+S",
+                                                CORLOC, "JUNO", refvec, np.radians(0.1), 3600,
+                                                4.0, 0.001, 7200)
 
         limbs_jcam = np.zeros((limbs_IAU.shape[0], 2))
         for i, limbi in enumerate(limbs_IAU):
-            transform = spice.pxfrm2('IAU_JUPITER', 'JUNO_JUNOCAM', eplimbs[i], eti)
-            veci = np.matmul(transform, limbs_IAU[i,:])
-            limbs_jcam[i,:] = cami.vec2pix(veci)
+            transform = spice.pxfrm2(
+                "IAU_JUPITER", "JUNO_JUNOCAM", eplimbs[i], eti
+            )
+            veci = np.matmul(transform, limbs_IAU[i, :])
+            limbs_jcam[i, :] = cami.vec2pix(veci)
 
-        mask = (limbs_jcam[:,1]<128)&(limbs_jcam[:,1]>0)&(limbs_jcam[:,0]>0)&(limbs_jcam[:,0]<1648)
-        limbs_jcam = limbs_jcam[mask,:]
+        mask = (
+            (limbs_jcam[:, 1] < 128)
+            & (limbs_jcam[:, 1] > 0)
+            & (limbs_jcam[:, 0] > 0)
+            & (limbs_jcam[:, 0] < 1648)
+        )
+        limbs_jcam = limbs_jcam[mask, :]
 
         return limbs_jcam
 
+    def process(self, nside=512, num_procs=8, apply_LS=True, n_neighbor=5):
+        print(f"Projecting self.fname to a HEALPix grid with n_side={nside}")
 
-    def process(self, num_procs=1):
-        '''
-            Main driver for the projection. Determines line of sight
-            intercepts for each pixel on the JunoCam image
+        self.project_to_midplane(num_procs)
 
-            Parameters
-            ----------
-            num_procs : int
-                Number of CPUs to use for multiprocessing [Default: 1]
-            jitter : float
-                offset in ms, to add to the start time to compensate for
-                jitter [Default: 0]
-                
-        '''
-        print("%s"%self.fname)
-        r = []
+        if apply_LS:
+            self.framedata.update_image(
+                apply_lommel_seeliger(self.framedata.image, self.framedata.incidence, self.framedata.emission)
+            )
 
-        done = np.zeros((self.nframes, 3))
-        extents = []
-        print("Projecting framelets:")
-        
-        lat       = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        lon       = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        decompimg = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        rawimg    = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        flux_cal  = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        incid      = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        emis      = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        scloc     = np.zeros((self.nframes, 3))
-        et        = np.zeros(self.nframes)
+        coords_new = np.transpose(self.framedata.coords, (1, 0, 2, 3, 4)).reshape(3, -1, 2)
+        imgvals_new = np.transpose(self.framedata.image, (1, 0, 2, 3)).reshape(3, -1)
 
-        ## save these parameters to a NetCDF file so that we can plot it later 
-        if not os.path.exists(NC_FOLDER):
-            os.mkdir(NC_FOLDER)
+        map = self.project_to_healpix(nside, coords_new, imgvals_new, n_neighbor=n_neighbor)
 
+        return map
 
-        self.find_jitter(jitter_max=120)
+    def project_to_midplane(self, num_procs=8):
+        """
+        Main driver for the projection to a camera frame. Projects
+        a full frame onto a camera view of the planet at the middle
+        timestamp of a given image
 
-        ## flatfield and gain from Brian Swift's GitHub (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)
-        flatfield = np.array(io.imread(os.path.dirname(__file__)+'/cal/flatFieldsSmooth12to16.tiff'))
-        #gain      = np.array(io.imread(os.path.dirname(__file__)+'/cal/gainSmooth12to16.tiff'))
+        Parameters
+        ----------
+        num_procs : int
+            Number of CPUs to use for multiprocessing [Default: 1]
+        """
+
+        # flatfield and gain from Brian Swift's GitHub
+        # (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)
+        flatfield = np.array(
+            io.imread(
+                os.path.dirname(__file__) + "/cal/flatFieldsSmooth12to16.tiff"
+            )
+        )
+        flatfield[flatfield == 0] = 1.0
 
         inpargs = []
         self.image = np.zeros_like(self.fullimg)
-        for i in range(self.nframes):
-            for j in range(3):
-                startrow = 3*FRAME_HEIGHT*i + j*FRAME_HEIGHT
-                endrow   = 3*FRAME_HEIGHT*i +(j+1)*FRAME_HEIGHT
-                
 
-                framei = decompand(self.fullimg[startrow:endrow,:])
-                flati  = flatfield[j*FRAME_HEIGHT:(j+1)*FRAME_HEIGHT,:]
-                #gaini  = gain[j*FRAME_HEIGHT:(j+1)*FRAME_HEIGHT,:]
-                flati[flati==0] = 1.
-                framei = framei/flati#*gaini
-                self.image[startrow:endrow,:] = framei/self.exposure
-                #framei = framei*gainSmooth12to16[j*FRAME_HEIGHT:(j+1)*FRAME_HEIGHT]
+        # create the data structure to hold the image and backplane info
+        self.framedata = FrameletData(self.nframes)
 
-                inpargs.append((i,j))
+        # decompand the image, apply the flat  field and get the input arguments
+        # for the multiprocessing driver
+        for n in tqdm.tqdm(range(self.nframes), desc='Decompanding'):
+            for c in range(3):
+                startrow = 3 * FRAME_HEIGHT * n + c * FRAME_HEIGHT
+                endrow = 3 * FRAME_HEIGHT * n + (c + 1) * FRAME_HEIGHT
 
-        pixres = np.zeros(len(inpargs))
+                framei = decompand(self.fullimg[startrow:endrow, :]) / 16384
 
-        pool = multiprocessing.Pool(processes=num_procs, initializer=initializer)
-        try:
-            r = pool.map_async(self.process_n_c, inpargs)
-            pool.close()
+                flati = flatfield[
+                    (c * FRAME_HEIGHT): ((c + 1) * FRAME_HEIGHT), :
+                ]
+                framei = framei / flati
+                self.image[startrow:endrow, :] = framei / self.exposure
+                inpargs.append([self.et[n, c], n, c, np.mean(self.et)])
 
-            tasks = pool._cache[r._job]
-            ninpt = len(inpargs)
-            with tqdm.tqdm(total=ninpt) as pbar: 
-                while tasks._number_left > 0:
-                    #progress = (ninpt - tasks._number_left*tasks._chunksize)/ninpt
-                    #print("\r[%-20s] %4.2f%%"%(int(progress*20)*'=', progress*100.), end='')
-                    #time.sleep(0.05)
-                    pbar.n = ninpt - tasks._number_left*tasks._chunksize
-                    pbar.refresh()
-                    
-                    #    print("\r[%-20s] %.2f%%"%(int(progress*20)*'=', progress*100.), end='')
-                    time.sleep(0.1)
-        except KeyboardInterrupt:
-            pool.terminate()
+        with multiprocessing.Pool(
+            processes=num_procs, initializer=initializer
+        ) as pool:
+            try:
+                r = pool.map_async(self._project_to_midplane, inpargs)
+                pool.close()
+
+                tasks = pool._cache[r._job]
+                ninpt = len(inpargs)
+                # run the projection using the multiprocessing driver
+                with tqdm.tqdm(total=ninpt, desc='Projecting framelets') as pbar:
+                    while tasks._number_left > 0:
+                        pbar.n = np.max([0, ninpt - tasks._number_left * tasks._chunksize])
+                        pbar.refresh()
+
+                        time.sleep(0.1)
+            except KeyboardInterrupt:
+                pool.terminate()
+                pool.join()
+                sys.exit()
+
             pool.join()
-            sys.exit()
-        
-        print()
-        pool.join()
 
         results = r.get()
+
+        # fetch the coordinates and the image values
         for jj in range(len(inpargs)):
-            lati, loni, scloci, eti, pixres[jj], mu0i, mui, flux_cali \
-                = results[jj]
-            i, ci = inpargs[jj]
-            startrow = 3*FRAME_HEIGHT*i + ci*FRAME_HEIGHT
-            endrow   = 3*FRAME_HEIGHT*i +(ci+1)*FRAME_HEIGHT
+            loni, lati, inci, emisi, coordsi, fluxcali = results[jj]
+            _, i, ci, _ = inpargs[jj]
+            startrow = 3 * FRAME_HEIGHT * i + ci * FRAME_HEIGHT
+            endrow = 3 * FRAME_HEIGHT * i + (ci + 1) * FRAME_HEIGHT
 
-            lat[i,ci,:,:]       = lati
-            lon[i,ci,:,:]       = loni
-            decompimg[i,ci,:,:] = self.image[startrow:endrow,:]#*scorri
-            rawimg[i,ci,:,:]    = self.fullimg[startrow:endrow,:]
-            incid[i,ci,:,:]     = mu0i
-            emis[i,ci,:,:]      = mui
-            flux_cal[i,ci,:,:]  = flux_cali
-            scloc[i,:]          = scloci
-            et[i]               = eti
-        
-        pixres = pixres[pixres > 0.]
+            # we store both the decompanded and raw images for future use
+            self.framedata.rawimg[i, ci, :, :] = self.image[startrow:endrow, :]
 
-        f = nc.Dataset('%s%s.nc'%(NC_FOLDER, self.fname), 'w')
+            self.framedata.coords[i, ci, :] = coordsi
+            self.framedata.image[i, ci, :] = self.framedata.rawimg[i, ci, :, :] / fluxcali
+            self.framedata.lat[i, ci, :] = lati
+            self.framedata.lon[i, ci, :] = loni
 
-        framedim = f.createDimension('nframes', self.nframes)
-        coldim   = f.createDimension('ncolors', 3)
-        xdim     = f.createDimension('x',FRAME_WIDTH)
-        ydim     = f.createDimension('y',FRAME_HEIGHT)
-        xyzdim   = f.createDimension('xyz', 3)
+            # emission and incidence angles for lightning correction
+            self.framedata.emission[i, ci, :] = emisi
+            self.framedata.incidence[i, ci, :] = inci
 
-        f.jitter = self.jitter*1.e3
+            # geometry correction
+            self.framedata.fluxcal[i, ci, :] = fluxcali
 
-        ## create the NetCDF variables 
-        latVar     = f.createVariable('lat', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
-        lonVar     = f.createVariable('lon', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
-        imgVar     = f.createVariable('img', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
-        incVar     = f.createVariable('incidence', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
-        emiVar     = f.createVariable('emission', 'float32', ('nframes', 'ncolors', 'y','x'), zlib=True)
-        rawimgVar  = f.createVariable('rawimg', 'uint8', ('nframes', 'ncolors', 'y','x'), zlib=True)
-        fluximgVar = f.createVariable('flux', 'float64', ('nframes', 'ncolors', 'y','x'), zlib=True)
-        scVar      = f.createVariable('scloc', 'float64', ('nframes','xyz'), zlib=True)
-        etVar      = f.createVariable('et', 'float64', ('nframes'), zlib=True)
+        return self.framedata
 
-        latVar[:]     = lat[:]
-        lonVar[:]     = lon[:]
-        imgVar[:]     = decompimg[:]
-        rawimgVar[:]  = np.asarray(rawimg[:]*255,dtype=np.uint8)
-        fluximgVar[:] = decompimg[:]*flux_cal
-        scVar[:]      = scloc[:]
-        etVar[:]      = et[:]
+    def _project_to_midplane(self, inpargs):
+        eti, n, c, tmid = inpargs
 
-        incVar[:]    = incid
-        emiVar[:]    = emis
-        
-        f.close()
+        coords = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 2))
+        lat = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        lon = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        incidence = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        emission = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        fluxcal = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
 
-        mask = (lat!=-1000.)&(lon!=-1000.)
-        self.lonmin = lon[mask].min()
-        self.lonmax = lon[mask].max()
-        self.latmin = lat[mask].min()
-        self.latmax = lat[mask].max()
+        project_midplane_c(eti, c, tmid, lon, lat, incidence, emission, coords, fluxcal)
 
-        print("Extents - lon: %.3f %.3f lat: %.3f %.3f - lowest pixres: %.3f deg/pix"%(\
-                self.lonmin, self.lonmax, self.latmin, self.latmax, np.min(pixres)))
-    
+        return lon, lat, incidence, emission, coords, fluxcal
+
+    def project_to_healpix(self, nside, coords, imgvals, n_neighbor=4):
+        # get the image extents in pixel coordinate space
+        x0 = np.nanmin(coords[:, :, 0])
+        x1 = np.nanmax(coords[:, :, 0])
+        y0 = np.nanmin(coords[:, :, 1])
+        y1 = np.nanmax(coords[:, :, 1])
+
+        extents = np.array([x0, x1, y0, y1])
+
+        # now we construct the map grid
+        longrid, latgrid = hp.pix2ang(nside, list(range(hp.nside2npix(nside))), lonlat=True)
+
+        pix = np.nan * np.zeros((longrid.size, 2))
+
+        # this assumes the midplane mode where the coordinates
+        # are using the Green band camera
+        et = np.mean(self.et)
+
+        # get the spacecraft location and transformation to and from the JUNOCAM coordinates
+        get_pixel_from_coords_c(np.radians(longrid), np.radians(latgrid), longrid.size, et, extents, pix)
+
+        # get the locations that JunoCam observed
+        inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
+        pix = pix[inds]
+        pixel_inds = hp.ang2pix(nside, longrid[inds], latgrid[inds], lonlat=True)
+
+        # finally, project the image onto the healpix grid
+        m = create_image_from_grid(coords, imgvals, pix, pixel_inds, longrid.shape, n_neighbor=n_neighbor)
+
+        return m
+
+
+def apply_lommel_seeliger(imgvals, incidence, emission):
+    '''
+        Apply the Lommel-Seeliger correction for incidence
+    '''
+    # apply Lommel-Siegler correction
+    mu0 = np.cos(incidence)
+    mu = np.cos(emission)
+    corr = 1. / (mu + mu0)
+    corr[corr < 1.e-1] = np.nan
+    imgvals = imgvals * corr
+
+    return imgvals
+
+
+def create_image_from_grid(coords, imgvals, pix, inds, img_shape, n_neighbor=5, min_dist=10.):
+    '''
+        Reproject an irregular spaced image onto a regular grid from a list of coordinate
+        locations and corresponding image values. This uses an inverse lookup-table defined
+        by `pix`, where pix gives the coordinates in the original image where the corresponding
+        pixel coordinate on the new image should be. The coordinate on the new image is given by
+        the inds variable.
+    '''
+    # break up the image and coordinate data into the different filters
+    Rcoords = coords[2, :]
+    Gcoords = coords[1, :]
+    Bcoords = coords[0, :]
+
+    Rmask = np.isfinite(Rcoords[:, 0] * Rcoords[:, 1])
+    Gmask = np.isfinite(Gcoords[:, 0] * Gcoords[:, 1])
+    Bmask = np.isfinite(Bcoords[:, 0] * Bcoords[:, 1])
+
+    Rcoords = Rcoords[Rmask]
+    Gcoords = Gcoords[Gmask]
+    Bcoords = Bcoords[Bmask]
+
+    Rimg = imgvals[2, Rmask]
+    Gimg = imgvals[1, Gmask]
+    Bimg = imgvals[0, Bmask]
+
+    # fit the nearest neighbour algorithm
+    print("Fitting neighbors")
+    Rneigh = NearestNeighbors().fit(Rcoords)
+    Gneigh = NearestNeighbors().fit(Gcoords)
+    Bneigh = NearestNeighbors().fit(Bcoords)
+
+    # get the corresponding pixel coordinates in the original image for each filter
+    print("Finding neighbors for new image")
+    R_dist, R_ind = Rneigh.kneighbors(pix, n_neighbor)
+    G_dist, G_ind = Gneigh.kneighbors(pix, n_neighbor)
+    B_dist, B_ind = Bneigh.kneighbors(pix, n_neighbor)
+
+    # convert the distance to weights. the farther the point from the
+    # target pixel, the less weight it has in the final average
+    # add a small epsilon if we accidently are on the exact same point
+    R_wght = 1. / (R_dist + 1.e-16)
+    G_wght = 1. / (G_dist + 1.e-16)
+    B_wght = 1. / (B_dist + 1.e-16)
+
+    # normalize the weights
+    R_wght = R_wght / np.sum(R_wght, axis=1, keepdims=True)
+    G_wght = G_wght / np.sum(G_wght, axis=1, keepdims=True)
+    B_wght = B_wght / np.sum(B_wght, axis=1, keepdims=True)
+
+    R_wght[R_dist.min(axis=1) > min_dist] = 0.
+    G_wght[G_dist.min(axis=1) > min_dist] = 0.
+    B_wght[B_dist.min(axis=1) > min_dist] = 0.
+
+    # get the weighted NN average for each pixel
+    print("Calculating image values at new locations")
+    R_vals = np.sum(np.take(Rimg, R_ind, axis=0) * R_wght, axis=1)
+    G_vals = np.sum(np.take(Gimg, G_ind, axis=0) * G_wght, axis=1)
+    B_vals = np.sum(np.take(Bimg, B_ind, axis=0) * B_wght, axis=1)
+
+    IMG = np.zeros((*img_shape, 3))
+    # loop through each point observed by JunoCam and assign the pixel value
+    for k, ind in enumerate(tqdm.tqdm(inds, desc='Building image')):
+        if len(img_shape) == 2:
+            j, i = np.unravel_index(ind, img_shape)
+
+            # do the weighted average for each filter
+            IMG[j, i, 0] = R_vals[k]
+            IMG[j, i, 1] = G_vals[k]
+            IMG[j, i, 2] = B_vals[k]
+        else:
+            IMG[ind, 0] = R_vals[k]
+            IMG[ind, 1] = G_vals[k]
+            IMG[ind, 2] = B_vals[k]
+
+    IMG[~np.isfinite(IMG)] = 0.
+
+    return IMG
