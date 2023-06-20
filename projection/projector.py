@@ -19,14 +19,6 @@ from .camera_funcs import CameraModel
 from .frameletdata import FrameletData
 import healpy as hp
 
-# global values that we will edit later
-coords = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 2))
-lat = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-lon = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-incidence = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-emission = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-fluxcal = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-
 # for decompanding -- taken from Kevin Gill's github page
 SQROOT = np.array(
     (
@@ -463,9 +455,6 @@ class Projector:
         inpargs = []
         self.image = np.zeros_like(self.fullimg)
 
-        # create the data structure to hold the image and backplane info
-        self.framedata = FrameletData(self.nframes)
-
         # decompand the image, apply the flat  field and get the input arguments
         # for the multiprocessing driver
         for n in tqdm.tqdm(range(self.nframes), desc='Decompanding'):
@@ -507,6 +496,9 @@ class Projector:
 
         results = r.get()
 
+        # create the data structure to hold the image and backplane info
+        self.framedata = FrameletData(self.nframes)
+
         # fetch the coordinates and the image values
         for jj in range(len(inpargs)):
             loni, lati, inci, emisi, coordsi, fluxcali = results[jj]
@@ -534,13 +526,12 @@ class Projector:
 
     def _project_to_midplane(self, inpargs):
         eti, n, c, tmid = inpargs
-        global coords, lat, lon, incidence, emission, fluxcal
-        coords = np.nan * coords
-        lat = np.nan * lat
-        lon = np.nan * lon
-        incidence = np.nan * incidence
-        emission = np.nan * emission
-        fluxcal = np.nan * fluxcal
+        coords = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 2))
+        lat = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        lon = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        incidence = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        emission = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        fluxcal = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
 
         project_midplane_c(eti, c, tmid, lon, lat, incidence, emission, coords, fluxcal)
 
