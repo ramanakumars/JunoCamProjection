@@ -337,6 +337,8 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
         coords[(jj * FRAME_WIDTH + ii) * 2 + 1] = pix_transformed[1];
         incid[jj * FRAME_WIDTH + ii] = inc;
         emis[jj * FRAME_WIDTH + ii] = emission;
+
+        // flux correction (see page 25 here: https://www.cs.cmu.edu/afs/cs/academic/class/16823-s16/www/pdfs/appearance-modeling-2.pdf)
         fluxcal[jj * FRAME_WIDTH + ii] = (M_PI / 4.) * pow((aperture / focal_length) * cosalpha * cosalpha, 2);
       }
     }
