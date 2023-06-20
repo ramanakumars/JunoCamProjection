@@ -30,11 +30,11 @@ void subtract3D(double *x, double *y, double *out) {
 }
 
 // 3D matrix dot product: out = A dot b
-void matmul3D(double *A, double *b, double *out) {
+void matmul3D(double A[3][3], double *b, double *out) {
   for (int i = 0; i < 3; i++) {
     out[i] = 0.;
     for (int j = 0; j < 3; j++) {
-      out[i] += A[i * 3 + j] * b[j];
+      out[i] += A[i][j] * b[j];
     }
   }
 }
@@ -111,99 +111,9 @@ void pix2vec(struct Camera *camera, double *px, double *vec) {
   vec[2] = camera->f1;
 }
 
-int *get_image_mask(double *lat, double *lon, int nlat, int nlon, double *et,
-                    int nframes) {
-  struct Camera camera[3];
-
-  initialize_camera(&camera[0], 0);
-  initialize_camera(&camera[1], 1);
-  initialize_camera(&camera[2], 2);
-
-  int *mask;
-  double surface_point[3], *vec, junocam_vec[3], pix[2], jup2cam_mat[3][3],
-      *jup2cam, *scloc, state[6], lt;
-  int count;
-
-  jup2cam = malloc((nframes * 9) * sizeof(double));
-  scloc = malloc((nframes * 3) * sizeof(double));
-  vec = malloc((nframes * 3) * sizeof(double));
-
-  for (int i = 0; i < nframes; i++) {
-    // calculate the spacecraft position
-    spkezr_c("JUNO", et[i], "IAU_JUPITER", "CN+S", "JUPITER", state, &lt);
-
-    // copy over the position data
-    scloc[i * 3 + 0] = state[0];
-    scloc[i * 3 + 1] = state[1];
-    scloc[i * 3 + 2] = state[2];
-
-    // find the transform frame
-    pxform_c("IAU_JUPITER", "JUNO_JUNOCAM", et[i], jup2cam_mat);
-
-    // flatten the matrix to be used later
-    for (int jj = 0; jj < 3; jj++) {
-      for (int ii = 0; ii < 3; ii++) {
-        jup2cam[i * 9 + jj * 3 + ii] = jup2cam_mat[jj][ii];
-      }
-    }
-  }
-
-  mask = malloc((nlat * nlon) * sizeof(int));
-
-  for (int jj = 0; jj < nlat; jj++) {
-    double latj, loni;
-    if ((jj % 100) == 0)
-      fprintf(stdout, "\r %4d/%4d ", jj, nlat);
-    latj = lat[jj];
-    for (int ii = 0; ii < nlon; ii++) {
-      mask[jj * nlon + ii] = 0;
-      loni = lon[ii];
-
-      // find the vector to the point on the surface
-      // in the Jupiter frame
-      srfrec_c(JUPITER, loni, latj, surface_point);
-
-      // get the vectors for all frames now
-      for (int i = 0; i < nframes; i++) {
-        // the vector from the spacecraft to the surface
-        // in the JUPITER frame
-        subtract3D(surface_point, &scloc[i * 3], junocam_vec);
-
-        // project this vector into the JUNOCAM frame
-        matmul3D(&jup2cam[i * 9], junocam_vec, &vec[i * 3]);
-      }
-
-      count = 0;
-      // loop over each camera
-      for (int n = 0; n < 3; n++) {
-        // check if any frame saw this this point in the given color
-        for (int i = 0; i < nframes; i++) {
-          // find the pixel coordinate corresponding
-          // to this vector
-          vec2pix(&camera[n], &vec[i * 3], pix);
-
-          // check if the pixel falls inside the photoactive area
-          if ((pix[0] >= 23.5) & (pix[0] < 1630.5) & (pix[1] >= 0.5) &
-              (pix[1] < 127.5)) {
-            count++;
-            break;
-          }
-        }
-      }
-      if (count == 3) {
-        mask[jj * nlon + ii] = 1;
-      }
-    }
-    fflush(stdout);
-  }
-  printf("\n");
-
-  return mask;
-}
-
 void furnish(char *file) { furnsh_c(file); }
 
-void process(double eti, int cam, double *cam2jup, double *lon, double *lat,
+void process(double eti, int cam, double cam2jup[3][3], double *lon, double *lat,
              double *inclin, double *emis, double *fluxcal) {
   double pix[2], spoint[3], srfvec[3], pixvec[3], pos_jup[3], scloc[3];
   double disti, loni, lati, phase, inc, emission, trgepoch, lt, plate_scale,
@@ -276,9 +186,10 @@ void process(double eti, int cam, double *cam2jup, double *lon, double *lat,
 }
 
 void project_midplane(double eti, int cam, double tmid, double *lon,
-                      double *lat, double *incid, double *emis, double *coords, double *fluxcal) {
+                      double *lat, double *incid, double *emis, double *coords,
+                      double *fluxcal) {
   double pix[2], pix_transformed[2], spoint[3], srfvec[3], pixvec[3], scloc[3],
-      vec_transformed[3], vec_iau[3], temp[3][3], *pxfrm_mid, *pxfrm_iau, disti,
+      vec_transformed[3], vec_iau[3], pxfrm_mid[3][3], pxfrm_iau[3][3], disti,
       loni, lati, phase, inc, emission, trgepoch, lt, plate_scale, cosalpha;
   int found;
 
@@ -286,24 +197,11 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
   initialize_camera(&camera, cam);
   initialize_camera(&cam0, 1);
 
-  pxfrm_mid = malloc(9 * sizeof(double));
-  pxfrm_iau = malloc(9 * sizeof(double));
-
   spkpos_c("JUNO", eti, "IAU_JUPITER", "CN+S", "JUPITER", scloc, &lt);
 
-  pxfrm2_c("JUNO_JUNOCAM", "JUNO_JUNOCAM", eti, tmid, temp);
-  for (int jj = 0; jj < 3; jj++) {
-    for (int ii = 0; ii < 3; ii++) {
-      pxfrm_mid[jj * 3 + ii] = temp[jj][ii];
-    }
-  }
+  pxfrm2_c("JUNO_JUNOCAM", "JUNO_JUNOCAM", eti, tmid, pxfrm_mid);
 
-  pxform_c("JUNO_JUNOCAM", "IAU_JUPITER", eti, temp);
-  for (int jj = 0; jj < 3; jj++) {
-    for (int ii = 0; ii < 3; ii++) {
-      pxfrm_iau[jj * 3 + ii] = temp[jj][ii];
-    }
-  }
+  pxform_c("JUNO_JUNOCAM", "IAU_JUPITER", eti, pxfrm_iau);
 
   for (int jj = 0; jj < FRAME_HEIGHT; jj++) {
     for (int ii = 0; ii < FRAME_WIDTH; ii++) {
@@ -311,9 +209,7 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
       pix[1] = jj;
       pix2vec(&camera, pix, pixvec);
 
-      cosalpha = pixvec[2] / sqrtf(pixvec[0] * pixvec[0] + pixvec[1] * pixvec[1] + pixvec[2] * pixvec[2]);
 
-      matmul3D(pxfrm_mid, pixvec, vec_transformed);
       matmul3D(pxfrm_iau, pixvec, vec_iau);
 
       // find an intercept between the vector and the Jovian "surface"
@@ -329,6 +225,7 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
         ilumin_c("Ellipsoid", "JUPITER", eti, "IAU_JUPITER", "CN+S", "JUNO",
                  spoint, &trgepoch, srfvec, &phase, &inc, &emission);
 
+        matmul3D(pxfrm_mid, pixvec, vec_transformed);
         vec2pix(&cam0, vec_transformed, pix_transformed);
 
         lat[jj * FRAME_WIDTH + ii] = lati * 180. / M_PI;
@@ -338,44 +235,49 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
         incid[jj * FRAME_WIDTH + ii] = inc;
         emis[jj * FRAME_WIDTH + ii] = emission;
 
-        // flux correction (see page 25 here: https://www.cs.cmu.edu/afs/cs/academic/class/16823-s16/www/pdfs/appearance-modeling-2.pdf)
-        fluxcal[jj * FRAME_WIDTH + ii] = (M_PI / 4.) * pow((aperture / focal_length) * cosalpha * cosalpha, 2);
+        // flux correction (see page 25 here:
+        // https://www.cs.cmu.edu/afs/cs/academic/class/16823-s16/www/pdfs/appearance-modeling-2.pdf)
+        cosalpha =
+            pixvec[2] / sqrtf(pixvec[0] * pixvec[0] + pixvec[1] * pixvec[1] +
+                              pixvec[2] * pixvec[2]);
+        fluxcal[jj * FRAME_WIDTH + ii] =
+            (M_PI / 4.) *
+            pow((aperture / focal_length) * cosalpha * cosalpha, 2);
       }
     }
   }
 }
 
+void get_pixel_from_coords(double *lon, double *lat, int npoints, double et,
+                           double *extents, double *pix) {
+  double scloc[3], spoint[3], dvec[3], dvec_jcam[3], pixi[2], lt,
+      pxfrm[3][3], x0, x1, y0, y1, percentage;
+  struct Camera cam0;
+  initialize_camera(&cam0, 1);
 
-void get_pixel_from_coords(double *lon, double *lat, int npoints, double et, double *extents, double *pix) {
-    double scloc[3], temp[3][3], spoint[3], dvec[3], dvec_jcam[3], pixi[2],
-             lt, pxfrm[9], x0, x1, y0, y1, percentage;
-    struct Camera cam0;
-    initialize_camera(&cam0, 1);
+  x0 = extents[0];
+  x1 = extents[1];
+  y0 = extents[2];
+  y1 = extents[3];
 
-    x0 = extents[0]; x1 = extents[1];
-    y0 = extents[2]; y1 = extents[3];
+  spkpos_c("JUNO", et, "IAU_JUPITER", "CN+S", "JUPITER", scloc, &lt);
+  pxform_c("IAU_JUPITER", "JUNO_JUNOCAM", et, pxfrm);
 
-    spkpos_c("JUNO", et, "IAU_JUPITER", "CN+S", "JUPITER", scloc, &lt);
-    pxform_c("IAU_JUPITER", "JUNO_JUNOCAM", et, temp);
-    for (int jj = 0; jj < 3; jj++) {
-        for (int ii = 0; ii < 3; ii++) {
-            pxfrm[jj * 3 + ii] = temp[jj][ii];
-        }
+  for (int i = 0; i < npoints; i++) {
+    double lati, loni;
+    lati = lat[i];
+    loni = lon[i];
+    srfrec_c(JUPITER, loni, lati, spoint);
+    subtract3D(spoint, scloc, dvec);
+
+    matmul3D(pxfrm, dvec, dvec_jcam);
+    vec2pix(&cam0, dvec_jcam, pixi);
+
+    if ((((dvec[0] * spoint[0] + dvec[1] * spoint[1] + dvec[2] * spoint[2]) <
+          0)) &
+        (pixi[0] >= x0) & (pixi[0] <= x1) & (pixi[1] >= y0) & (pixi[1] <= y1)) {
+      pix[i * 2] = pixi[0];
+      pix[i * 2 + 1] = pixi[1];
     }
-
-    for(int i=0; i<npoints; i++) {
-        double lati, loni;
-        lati = lat[i];
-        loni = lon[i];
-        srfrec_c(JUPITER, loni, lati, spoint);
-        subtract3D(spoint, scloc, dvec);
-
-        matmul3D(pxfrm, dvec, dvec_jcam);
-        vec2pix(&cam0, dvec_jcam, pixi);
-
-        if ((((dvec[0] * spoint[0] + dvec[1] * spoint[1] + dvec[2] * spoint[2]) < 0)) & (pixi[0] >= x0) & (pixi[0] <= x1) & (pixi[1] >= y0) & (pixi[1] <= y1)) {
-            pix[i * 2] = pixi[0];
-            pix[i * 2 + 1] = pixi[1];
-        }
-    }
+  }
 }

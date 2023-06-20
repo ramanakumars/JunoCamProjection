@@ -5,19 +5,27 @@ from skimage import feature
 from sklearn.metrics import pairwise_distances
 from sklearn.neighbors import NearestNeighbors
 import os
-import time
 import matplotlib.pyplot as plt
-import multiprocessing
 import spiceypy as spice
 from skimage import io
 import tqdm
+import multiprocessing
+import time
+import sys
 from ftplib import FTP
 from .globals import FRAME_HEIGHT, FRAME_WIDTH, initializer
 from .cython_utils import furnish_c, project_midplane_c, get_pixel_from_coords_c
 from .camera_funcs import CameraModel
 from .frameletdata import FrameletData
-import sys
 import healpy as hp
+
+# global values that we will edit later
+coords = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 2))
+lat = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+lon = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+incidence = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+emission = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+fluxcal = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
 
 # for decompanding -- taken from Kevin Gill's github page
 SQROOT = np.array(
@@ -502,6 +510,7 @@ class Projector:
         # fetch the coordinates and the image values
         for jj in range(len(inpargs)):
             loni, lati, inci, emisi, coordsi, fluxcali = results[jj]
+            # loni, lati, inci, emisi, coordsi, fluxcali = _project_to_midplane(*inpargs[jj])
             _, i, ci, _ = inpargs[jj]
             startrow = 3 * FRAME_HEIGHT * i + ci * FRAME_HEIGHT
             endrow = 3 * FRAME_HEIGHT * i + (ci + 1) * FRAME_HEIGHT
@@ -525,13 +534,13 @@ class Projector:
 
     def _project_to_midplane(self, inpargs):
         eti, n, c, tmid = inpargs
-
-        coords = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 2))
-        lat = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-        lon = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-        incidence = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-        emission = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-        fluxcal = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        global coords, lat, lon, incidence, emission, fluxcal
+        coords = np.nan * coords
+        lat = np.nan * lat
+        lon = np.nan * lon
+        incidence = np.nan * incidence
+        emission = np.nan * emission
+        fluxcal = np.nan * fluxcal
 
         project_midplane_c(eti, c, tmid, lon, lat, incidence, emission, coords, fluxcal)
 
