@@ -15,6 +15,7 @@ from ftplib import FTP
 from .globals import FRAME_HEIGHT, FRAME_WIDTH, initializer
 from .cython_utils import furnish_c, project_midplane_c, get_pixel_from_coords_c
 from .camera_funcs import CameraModel
+from .frameletdata import FrameletData
 import sys
 import healpy as hp
 
@@ -413,16 +414,18 @@ class Projector:
 
         return limbs_jcam
 
-    def process(self, nside=2048, num_procs=8, apply_LS=True, n_neighbor=5):
-        print("%s" % self.fname)
+    def process(self, nside=512, num_procs=8, apply_LS=True, n_neighbor=5):
+        print(f"Projecting self.fname to a HEALPix grid with n_side={nside}")
 
-        lons, lats, incidence, emission, fluxcal, coords, imgvals = self.project_to_midplane(num_procs)
+        self.project_to_midplane(num_procs)
 
         if apply_LS:
-            imgvals = apply_lommel_seeliger(imgvals, incidence, emission)
+            self.framedata.update_image(
+                apply_lommel_seeliger(self.framedata.image, self.framedata.incidence, self.framedata.emission)
+            )
 
-        coords_new = np.transpose(coords, (1, 0, 2, 3, 4)).reshape(3, -1, 2)
-        imgvals_new = np.transpose(imgvals, (1, 0, 2, 3)).reshape(3, -1)
+        coords_new = np.transpose(self.framedata.coords, (1, 0, 2, 3, 4)).reshape(3, -1, 2)
+        imgvals_new = np.transpose(self.framedata.image, (1, 0, 2, 3)).reshape(3, -1)
 
         map = self.project_to_healpix(nside, coords_new, imgvals_new, n_neighbor=n_neighbor)
 
@@ -431,16 +434,14 @@ class Projector:
     def project_to_midplane(self, num_procs=8):
         """
         Main driver for the projection to a camera frame. Projects
-        a full frame onto a camera view of the planet
+        a full frame onto a camera view of the planet at the middle
+        timestamp of a given image
 
         Parameters
         ----------
         num_procs : int
             Number of CPUs to use for multiprocessing [Default: 1]
         """
-
-        decompimg = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        rawimg = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
         # flatfield and gain from Brian Swift's GitHub
         # (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)
@@ -453,6 +454,9 @@ class Projector:
 
         inpargs = []
         self.image = np.zeros_like(self.fullimg)
+
+        # create the data structure to hold the image and backplane info
+        self.framedata = FrameletData(self.nframes)
 
         # decompand the image, apply the flat  field and get the input arguments
         # for the multiprocessing driver
@@ -493,14 +497,6 @@ class Projector:
 
             pool.join()
 
-        coords = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH, 2))
-        imgvals = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        lats = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        lons = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        emission = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        incidence = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-        fluxcal = np.zeros((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
-
         results = r.get()
 
         # fetch the coordinates and the image values
@@ -511,22 +507,21 @@ class Projector:
             endrow = 3 * FRAME_HEIGHT * i + (ci + 1) * FRAME_HEIGHT
 
             # we store both the decompanded and raw images for future use
-            decompimg[i, ci, :, :] = self.image[startrow:endrow, :]
-            rawimg[i, ci, :, :] = self.fullimg[startrow:endrow, :]
+            self.framedata.rawimg[i, ci, :, :] = self.image[startrow:endrow, :]
 
-            coords[i, ci, :] = coordsi
-            imgvals[i, ci, :] = decompimg[i, ci, :, :] / fluxcali
-            lats[i, ci, :] = lati
-            lons[i, ci, :] = loni
+            self.framedata.coords[i, ci, :] = coordsi
+            self.framedata.image[i, ci, :] = self.framedata.rawimg[i, ci, :, :] / fluxcali
+            self.framedata.lat[i, ci, :] = lati
+            self.framedata.lon[i, ci, :] = loni
 
             # emission and incidence angles for lightning correction
-            emission[i, ci, :] = emisi
-            incidence[i, ci, :] = inci
+            self.framedata.emission[i, ci, :] = emisi
+            self.framedata.incidence[i, ci, :] = inci
 
             # geometry correction
-            fluxcal[i, ci, :] = fluxcali
+            self.framedata.fluxcal[i, ci, :] = fluxcali
 
-        return lons, lats, incidence, emission, fluxcal, coords, imgvals
+        return self.framedata
 
     def _project_to_midplane(self, inpargs):
         eti, n, c, tmid = inpargs
