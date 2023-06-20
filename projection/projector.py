@@ -413,76 +413,20 @@ class Projector:
 
         return limbs_jcam
 
-    def process(self, pixres=1. / 25., num_procs=8, apply_LS=True, n_neighbor=5):
+    def process(self, nside=2048, num_procs=8, apply_LS=True, n_neighbor=5):
         print("%s" % self.fname)
 
-        lons, lats, incidence, emission, coords, imgvals = self.project_to_midplane(num_procs)
+        lons, lats, incidence, emission, fluxcal, coords, imgvals = self.project_to_midplane(num_procs)
 
         if apply_LS:
             imgvals = apply_lommel_seeliger(imgvals, incidence, emission)
 
-        lon, lat, img = self.project_to_map(lons, lats, coords, imgvals, num_procs=num_procs,
-                                            pixres=pixres, n_neighbor=n_neighbor)
+        coords_new = np.transpose(coords, (1, 0, 2, 3, 4)).reshape(3, -1, 2)
+        imgvals_new = np.transpose(imgvals, (1, 0, 2, 3)).reshape(3, -1)
 
-        return lon, lat, img
+        map = self.project_to_healpix(nside, coords_new, imgvals_new, n_neighbor=n_neighbor)
 
-    def project_to_map(self, lons, lats, coords, imgvals, num_procs=8, pixres=1. / 25., n_neighbor=5):
-        '''
-            Given a list of lon/lat and image coordinates, project the image to a
-            cylindrical map. This uses a NN search to get the closest pixel positions
-            and does a weighted average to do the projection.
-        '''
-        coords = np.transpose(coords, (1, 0, 2, 3, 4)).reshape(3, -1, 2)
-        imgvals = np.transpose(imgvals, (1, 0, 2, 3)).reshape(3, -1)
-
-        # get the image extents in pixel coordinate space
-        x0 = np.nanmin(coords[:, :, 0])
-        x1 = np.nanmax(coords[:, :, 0])
-        y0 = np.nanmin(coords[:, :, 1])
-        y1 = np.nanmax(coords[:, :, 1])
-
-        # this assumes the midplane mode where the coordinates
-        # are using the Green band camera
-        cam0 = CameraModel(1)
-
-        # now we construct the map grid
-        longrid = np.radians(np.arange(np.nanmin(lons), np.nanmax(lons), pixres))
-        latgrid = np.radians(np.arange(np.nanmin(lats), np.nanmax(lats), pixres))
-
-        LON, LAT = np.meshgrid(longrid, latgrid)
-
-        # get the spacecraft location and transformation to and from the JUNOCAM coordinates
-        scloc, _ = spice.spkpos("JUNO", np.mean(self.et), "IAU_JUPITER", "CN+S", "JUPITER")
-        pxfrm = spice.pxform("IAU_JUPITER", "JUNO_JUNOCAM", np.mean(self.et))
-
-        pix = np.nan * np.zeros((LON.size, 2))
-
-        # loop through all points on our map and get the corresponding location on the
-        # midplane map. Also check whether the lon/lat point was observed by Junocam
-        for j, lat in enumerate(tqdm.tqdm(latgrid, desc='Transforming pixel coordinates')):
-            for i, lon in enumerate(longrid):
-                spoint = spice.srfrec(599, lon, lat)
-                dvec = spoint - scloc
-
-                dvec_jcam = np.dot(pxfrm, dvec)
-                pixi = cam0.vec2pix(dvec_jcam)
-
-                if (
-                        (np.dot(dvec, spoint) < 0) &
-                        (pixi[0] >= x0) &
-                        (pixi[0] <= x1) &
-                        (pixi[1] >= y0) &
-                        (pixi[1] <= y1)
-                ):
-                    pix[np.ravel_multi_index((j, i), LON.shape), :] = pixi
-
-        # get the locations that JunoCam observed
-        inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
-        pix = pix[inds]
-
-        IMG = create_image_from_grid(coords, imgvals, pix, inds, LON.shape, n_neighbor=n_neighbor)
-
-        return longrid, latgrid, IMG
+        return map
 
     def project_to_midplane(self, num_procs=8):
         """
@@ -598,7 +542,7 @@ class Projector:
 
         return lon, lat, incidence, emission, coords, fluxcal
 
-    def project_to_healpix(self, nside, coords, imgvals):
+    def project_to_healpix(self, nside, coords, imgvals, n_neighbor=4):
         # get the image extents in pixel coordinate space
         x0 = np.nanmin(coords[:, :, 0])
         x1 = np.nanmax(coords[:, :, 0])
@@ -617,31 +561,6 @@ class Projector:
         et = np.mean(self.et)
 
         # get the spacecraft location and transformation to and from the JUNOCAM coordinates
-        '''
-        scloc, _ = spice.spkpos("JUNO", et, "IAU_JUPITER", "CN+S", "JUPITER")
-        pxfrm = spice.pxform("IAU_JUPITER", "JUNO_JUNOCAM", et)
-
-        for i, (lon, lat) in enumerate(
-            tqdm.tqdm(
-                zip(longrid, latgrid), total=len(longrid), desc='Building pixel coordinates'
-            )
-        ):
-            spoint = spice.srfrec(599, np.radians(lon), np.radians(lat))
-            dvec = spoint - scloc
-
-            dvec_jcam = np.dot(pxfrm, dvec)
-            pixi = cam0.vec2pix(dvec_jcam)
-
-            if (
-                    (np.dot(dvec, spoint) < 0) &
-                    (pixi[0] >= x0) &
-                    (pixi[0] <= x1) &
-                    (pixi[1] >= y0) &
-                    (pixi[1] <= y1)
-            ):
-                pix[i, :] = pixi
-        '''
-
         get_pixel_from_coords_c(np.radians(longrid), np.radians(latgrid), longrid.size, et, extents, pix)
 
         # get the locations that JunoCam observed
@@ -650,7 +569,7 @@ class Projector:
         pixel_inds = hp.ang2pix(nside, longrid[inds], latgrid[inds], lonlat=True)
 
         # finally, project the image onto the healpix grid
-        m = create_image_from_grid(coords, imgvals, pix, pixel_inds, longrid.shape, n_neighbor=2)
+        m = create_image_from_grid(coords, imgvals, pix, pixel_inds, longrid.shape, n_neighbor=n_neighbor)
 
         return m
 
