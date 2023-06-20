@@ -3,9 +3,7 @@ numpy
 scipy
 matplotlib
 spiceypy
-Cython
-netCDF4
-cartopy
 scikit-learn
 scikit-image
 tqdm
+healpy
