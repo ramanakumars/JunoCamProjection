@@ -22,17 +22,6 @@ struct Camera {
   double k1, k2, cx, cy, flength, psize, f1, time_bias, iframe_delay;
 };
 
-#define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
-#define PBWIDTH 60
-
-void print_progress(double percentage) {
-    int val = (int) (percentage * 100);
-    int lpad = (int) (percentage * PBWIDTH);
-    int rpad = PBWIDTH - lpad;
-    fprintf(stdout, "\r%3d%% [%.*s%*s]", val, lpad, PBSTR, rpad, "");
-    fflush(stdout);
-}
-
 // subtract two 3D vectors: out = x - y
 void subtract3D(double *x, double *y, double *out) {
   for (int i = 0; i < 3; i++) {
@@ -386,8 +375,5 @@ void get_pixel_from_coords(double *lon, double *lat, int npoints, double et, dou
             pix[i * 2] = pixi[0];
             pix[i * 2 + 1] = pixi[1];
         }
-
-        percentage = (double) i / npoints;
-        print_progress(percentage);
     }
 }
