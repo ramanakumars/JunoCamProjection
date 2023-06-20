@@ -423,7 +423,7 @@ class Projector:
         return limbs_jcam
 
     def process(self, nside=512, num_procs=8, apply_LS=True, n_neighbor=5):
-        print(f"Projecting self.fname to a HEALPix grid with n_side={nside}")
+        print(f"Projecting {self.fname} to a HEALPix grid with n_side={nside}")
 
         self.project_to_midplane(num_procs)
 
