@@ -12,10 +12,10 @@ import tqdm
 import multiprocessing
 import time
 import sys
-from ftplib import FTP
 from .globals import FRAME_HEIGHT, FRAME_WIDTH, initializer
 from .cython_utils import furnish_c, project_midplane_c, get_pixel_from_coords_c
 from .camera_funcs import CameraModel
+from .spice_utils import get_kernels
 from .frameletdata import FrameletData
 import healpy as hp
 
@@ -95,6 +95,8 @@ class Projector:
         self.fname = self.metadata["FILE_NAME"].replace("-raw.png", "")
         intframe_delay = self.metadata["INTERFRAME_DELAY"].split(" ")
 
+        print(f"Loading data for {self.fname}")
+
         self.fullimg = plt.imread(imagefolder + "%s-raw.png" % self.fname)
 
         # ignore color channels in the image
@@ -119,7 +121,7 @@ class Projector:
         # number of RGB frames
         self.nframes = int(self.nframelets / 3)
 
-        self.download_kernels(kerneldir)
+        self.load_kernels(kerneldir)
 
         self.re, _, self.rp = spice.bodvar(spice.bodn2c("JUPITER"), "RADII", 3)
         self.flattening = (self.re - self.rp) / self.re
@@ -139,134 +141,13 @@ class Projector:
                 self.et[n, c] = self.start_et + ci.time_bias + self.jitter +\
                     (self.frame_delay + ci.iframe_delay) * n
 
-    def download_kernels(self, KERNEL_DATAFOLDER):
-        if KERNEL_DATAFOLDER[-1] != '/':
-            KERNEL_DATAFOLDER += '/'
-
-        if not os.path.exists(KERNEL_DATAFOLDER):
-            os.mkdir(KERNEL_DATAFOLDER)
-
-        for folder in ['ik', 'ck', 'spk', 'pck', 'fk', 'lsk', 'sclk']:
-            if not os.path.exists(KERNEL_DATAFOLDER + folder):
-                os.mkdir(KERNEL_DATAFOLDER + folder)
-
-        ftp = FTP('naif.jpl.nasa.gov')
-        ftp.login()  # login anonymously
-        ftp.cwd('pub/naif/JUNO/kernels/')
-
-        iks = sorted(ftp.nlst("ik/juno_junocam_v*.ti"))
-        cks = sorted(ftp.nlst("ck/juno_sc_*.bc"))
-        spks1 = sorted(ftp.nlst("spk/spk_*.bsp"))
-        spks2 = sorted(ftp.nlst("spk/jup*.bsp"))
-        spks3 = sorted(ftp.nlst("spk/de*.bsp"))
-        spks4 = sorted(ftp.nlst("spk/juno_struct*.bsp"))
-        pcks = sorted(ftp.nlst("pck/pck*.tpc"))
-        fks = sorted(ftp.nlst("fk/juno_v*.tf"))
-        sclks = sorted(ftp.nlst("sclk/JNO_SCLKSCET.*.tsc"))
-        lsks = sorted(ftp.nlst("lsk/naif*.tls"))
-
-        year, month, day = self.start_utc.split("-")
-        yy = year[2:]
-        mm = month
-        dd = day[:2]
-
-        intdate = int("%s%s%s" % (yy, mm, dd))
-
-        kernels = []
-
-        # find the ck and spk kernels for the given date
-        ckpattern = r"juno_sc_rec_([0-9]{6})_([0-9]{6})\S*"
-        nck = 0
-        for ck in cks:
-            fname = os.path.basename(ck)
-            groups = re.findall(ckpattern, fname)
-            if len(groups) == 0:
-                continue
-            datestart, dateend = groups[0]
-
-            if (int(datestart) <= intdate) & (int(dateend) >= intdate):
-                kernels.append(ck)
-                nck += 1
-
-        """ use the predicted kernels if there are no rec """
-        if nck == 0:
-            print("Using predicted CK")
-            ckpattern = r"juno_sc_pre_([0-9]{6})_([0-9]{6})\S*"
-            for ck in cks:
-                fname = os.path.basename(ck)
-                groups = re.findall(ckpattern, fname)
-                if len(groups) == 0:
-                    continue
-                datestart, dateend = groups[0]
-
-                if (int(datestart) <= intdate) & (int(dateend) >= intdate):
-                    kernels.append(ck)
-                    nck += 1
-
-        spkpattern = r"spk_rec_([0-9]{6})_([0-9]{6})\S*"
-        nspk = 0
-        for spk in spks1:
-            fname = os.path.basename(spk)
-            groups = re.findall(spkpattern, fname)
-            if len(groups) == 0:
-                continue
-            datestart, dateend = groups[0]
-
-            if (int(datestart) <= intdate) & (int(dateend) >= intdate):
-                kernels.append(spk)
-                nspk += 1
-
-        """ use the predicted kernels if there are no rec """
-        if nspk == 0:
-            print("Using predicted SPK")
-            spkpattern = r"spk_pre_([0-9]{6})_([0-9]{6})\S*"
-            for spk in spks1:
-                fname = os.path.basename(spk)
-                groups = re.findall(spkpattern, fname)
-                if len(groups) == 0:
-                    continue
-                datestart, dateend = groups[0]
-
-                if (int(datestart) <= intdate) & (int(dateend) >= intdate):
-                    kernels.append(spk)
-                    nspk += 1
-
-        # if(nck*nspk == 0):
-        #    print("ERROR: Kernels not found for the date range!")
-        assert nck * nspk > 0, "Kernels not found for the given date range!"
-
-        # load the latest updates for these
-        kernels.append(iks[-1])
-        kernels.append(spks2[-1])
-        kernels.append(spks3[-1])
-        kernels.append(spks4[-1])
-        kernels.append(pcks[-1])
-        kernels.append(fks[-1])
-        kernels.append(sclks[-1])
-        kernels.append(lsks[-1])
-        kernels.append("spk/juno_rec_orbit.bsp")
-        kernels.append("spk/juno_pred_orbit.bsp")
-
+    def load_kernels(self, KERNEL_DATAFOLDER):
         self.kernels = []
+        kernels = get_kernels(KERNEL_DATAFOLDER, self.start_utc)
         for kernel in kernels:
-            kernel_local = KERNEL_DATAFOLDER + kernel
-            filesize = ftp.size(kernel)
-            try:
-                if os.path.isfile(kernel_local) & (os.path.getsize(kernel_local) == filesize):
-                    continue
-            except FileNotFoundError:
-                pass
-            print(f"Downloading {kernel}", flush=True)
-
-            with open(kernel_local, 'wb') as kerfile:
-                ftp.retrbinary(f"RETR {kernel}", kerfile.write)
-
-        for kernel in kernels:
-            kernel_local = KERNEL_DATAFOLDER + kernel
-            furnish_c(kernel_local.encode("ascii"))
-            spice.furnsh(kernel_local)
-
-            self.kernels.append(kernel_local)
+            furnish_c(kernel.encode("ascii"))
+            spice.furnsh(kernel)
+            self.kernels.append(kernel)
 
     def find_jitter(self, jitter_max=25, plot=False):
         threshold = 0.1 * self.fullimg.max()
@@ -539,10 +420,11 @@ class Projector:
 
     def project_to_healpix(self, nside, coords, imgvals, n_neighbor=4):
         # get the image extents in pixel coordinate space
-        x0 = np.nanmin(coords[:, :, 0])
-        x1 = np.nanmax(coords[:, :, 0])
-        y0 = np.nanmin(coords[:, :, 1])
-        y1 = np.nanmax(coords[:, :, 1])
+        # clip half a pixel to avoid edge artifacts
+        x0 = np.nanmin(coords[:, :, 0]) + 0.5
+        x1 = np.nanmax(coords[:, :, 0]) - 0.5
+        y0 = np.nanmin(coords[:, :, 1]) + 0.5
+        y1 = np.nanmax(coords[:, :, 1]) - 0.5
 
         extents = np.array([x0, x1, y0, y1])
 
@@ -577,13 +459,13 @@ def apply_lommel_seeliger(imgvals, incidence, emission):
     mu0 = np.cos(incidence)
     mu = np.cos(emission)
     corr = 1. / (mu + mu0)
-    corr[corr < 1.e-1] = np.nan
+    corr[np.abs(incidence) > np.radians(89)] = np.nan
     imgvals = imgvals * corr
 
     return imgvals
 
 
-def create_image_from_grid(coords, imgvals, pix, inds, img_shape, n_neighbor=5, min_dist=10.):
+def create_image_from_grid(coords, imgvals, pix, inds, img_shape, n_neighbor=5, min_dist=25.):
     '''
         Reproject an irregular spaced image onto a regular grid from a list of coordinate
         locations and corresponding image values. This uses an inverse lookup-table defined
