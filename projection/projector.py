@@ -6,11 +6,7 @@ from sklearn.neighbors import NearestNeighbors
 import matplotlib.pyplot as plt
 import spiceypy as spice
 import tqdm
-import multiprocessing
-import time
-import sys
-from .globals import FRAME_HEIGHT, FRAME_WIDTH, initializer
-from .cython_utils import furnish_c, project_midplane_c, get_pixel_from_coords_c
+from .cython_utils import furnish_c, get_pixel_from_coords_c
 from .camera_funcs import CameraModel
 from .spice_utils import get_kernels
 from .frameletdata import FrameletData
@@ -188,22 +184,34 @@ class Projector:
 
         return limbs_jcam
 
-    def process(self, nside=512, num_procs=8, apply_LS=True, n_neighbor=5):
+    def process(self, nside=512, num_procs=8, apply_correction='minneart', n_neighbor=5, minneart_k=1.25):
         print(f"Projecting {self.fname} to a HEALPix grid with n_side={nside}")
 
         self.framedata.get_backplane(num_procs)
 
-        if apply_LS:
-            self.framedata.update_image(
-                apply_lommel_seeliger(self.framedata.image, self.framedata.incidence, self.framedata.emission)
-            )
+        self.apply_correction(apply_correction, minneart_k)
 
-        coords_new = np.transpose(self.framedata.coords, (1, 0, 2, 3, 4)).reshape(3, -1, 2)
-        imgvals_new = np.transpose(self.framedata.image, (1, 0, 2, 3)).reshape(3, -1)
-
-        map = self.project_to_healpix(nside, coords_new, imgvals_new, n_neighbor=n_neighbor)
+        map = self.project_to_healpix(nside, self.framecoords, self.imagevalues, n_neighbor=n_neighbor)
 
         return map
+
+    def apply_correction(self, correction_type, minneart_k=1.25):
+        if correction_type == 'ls':
+            print("Applying Lommel-Seeliger correction")
+            for frame in self.framedata.framelets:
+                frame.image = apply_lommel_seeliger(frame.image, frame.incidence, frame.emission)
+        elif correction_type == 'minneart':
+            print("Applying Minneart correction")
+            for frame in self.framedata.framelets:
+                frame.image = apply_minneart(frame.image, frame.incidence, frame.emission, k=minneart_k)
+
+    @property
+    def framecoords(self):
+        return np.transpose(self.framedata.coords, (1, 0, 2, 3, 4)).reshape(3, -1, 2)
+
+    @property
+    def imagevalues(self):
+        return np.transpose(self.framedata.image, (1, 0, 2, 3)).reshape(3, -1)
 
     def project_to_healpix(self, nside, coords, imgvals, n_neighbor=4):
         # get the image extents in pixel coordinate space
@@ -242,13 +250,24 @@ def apply_lommel_seeliger(imgvals, incidence, emission):
     '''
         Apply the Lommel-Seeliger correction for incidence
     '''
-    print("Applying Lommel-Seeliger correction")
     # apply Lommel-Seeliger correction
     mu0 = np.cos(incidence)
     mu = np.cos(emission)
     corr = 1. / (mu + mu0)
     corr[np.abs(incidence) > np.radians(89)] = np.nan
     imgvals = imgvals * corr
+
+    return imgvals
+
+
+def apply_minneart(imgvals, incidence, emission, k=1.25):
+    # apply Minneart correction
+    mu0 = np.cos(incidence)
+    mu = np.cos(emission)
+    corr = (mu ** k) * (mu0 ** (k - 1))
+    # log(mu * mu0) < -4 is usually pretty noisy
+    corr[np.log(np.cos(incidence) * np.cos(emission)) < -4] = np.inf
+    imgvals = imgvals / corr
 
     return imgvals
 
@@ -260,6 +279,39 @@ def create_image_from_grid(coords, imgvals, pix, inds, img_shape, n_neighbor=5, 
         by `pix`, where pix gives the coordinates in the original image where the corresponding
         pixel coordinate on the new image should be. The coordinate on the new image is given by
         the inds variable.
+    '''
+    nchannels, ncoords, _ = coords.shape
+    mask = np.ones(coords.shape[1], dtype=bool)
+    for n in range(nchannels):
+        maski = np.isfinite(coords[n, :, 0] * coords[n, :, 1])
+        mask = mask & maski
+
+    newvals = np.zeros((nchannels, pix.shape[0]))
+    print("Calculating image values at new locations")
+    for n in range(nchannels):
+        neighbors = NearestNeighbors().fit(coords[n][mask])
+        dist, indi = neighbors.kneighbors(pix, n_neighbor)
+        weight = 1. / (dist + 1.e-16)
+        weight = weight / np.sum(weight, axis=1, keepdims=True)
+        weight[dist > min_dist] = 0.
+
+        newvals[n, :] = np.sum(np.take(imgvals[n][mask], indi, axis=0) * weight, axis=1)
+
+    IMG = np.zeros((*img_shape, nchannels))
+    # loop through each point observed by JunoCam and assign the pixel value
+    for k, ind in enumerate(tqdm.tqdm(inds, desc='Building image')):
+        if len(img_shape) == 2:
+            j, i = np.unravel_index(ind, img_shape)
+
+            # do the weighted average for each filter
+            for n in range(nchannels):
+                IMG[j, i, n] = newvals[n, k]
+        else:
+            for n in range(nchannels):
+                IMG[ind, n] = newvals[n, k]
+
+    IMG[~np.isfinite(IMG)] = 0.
+
     '''
     # break up the image and coordinate data into the different filters
     Rcoords = coords[2, :]
@@ -328,5 +380,6 @@ def create_image_from_grid(coords, imgvals, pix, inds, img_shape, n_neighbor=5, 
             IMG[ind, 2] = B_vals[k]
 
     IMG[~np.isfinite(IMG)] = 0.
+    '''
 
     return IMG

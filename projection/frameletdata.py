@@ -12,7 +12,7 @@ import multiprocessing
 
 
 class FrameletData:
-    def __init__(self, metadata, imgfolder):
+    def __init__(self, metadata: dict, imgfolder: str):
         self.nframelets = int(metadata["LINES"] / FRAME_HEIGHT)
         # number of RGB frames
         self.nframes = int(self.nframelets / 3)
@@ -64,71 +64,63 @@ class FrameletData:
 
                 self.framelets.append(Framelet(self.start_et, frame_delay, n, c, framei))
 
-    def get_backplane(self, num_procs):
+    def get_backplane(self, num_procs: int):
         tmid = np.mean([frame.et for frame in self.framelets])
 
-        '''
-        inpargs = [(frame, tmid) for frame in self.framelets]
+        if num_procs > 1:
+            inpargs = [(frame, tmid) for frame in self.framelets]
+            with multiprocessing.Pool(
+                processes=num_procs, initializer=initializer
+            ) as pool:
+                try:
+                    with tqdm.tqdm(inpargs, desc='Projecting framelets') as pbar:
+                        self.framelets = pool.starmap(Framelet.project_to_midplane, pbar)
+                        pool.close()
+                except KeyboardInterrupt:
+                    pool.terminate()
+                    sys.exit()
+                finally:
+                    pool.join()
+        else:
+            for frame in tqdm.tqdm(self.framelets):
+                frame.project_to_midplane(tmid)
 
-        with multiprocessing.Pool(
-            processes=num_procs, initializer=initializer
-        ) as pool:
-            try:
-                pool.starmap(Framelet.project_to_midplane, tqdm.tqdm(inpargs))
-                pool.close()
-            except KeyboardInterrupt:
-                pool.terminate()
-                pool.join()
-                sys.exit()
-
-            pool.join()
-        '''
-        for frame in tqdm.tqdm(self.framelets):
-            frame.project_to_midplane(tmid)
-
-    def update_jitter(self, jitter):
+    def update_jitter(self, jitter: float):
+        self.jitter = jitter
         for framelet in self.framelets:
             framelet.jitter = jitter
 
-    def update_image(self, new_image):
-        assert new_image.shape == self.image.shape, f"New image must be the same shape as the old one. Got {new_image.shape} instead of {self.image.shape}"
-
-        # first back up the original
-        self.image_old = self.image
-        # then store the new image data
-        self.image[:] = new_image[:]
-
     @property
-    def tmid(self):
+    def tmid(self) -> float:
         return np.mean([frame.et for frame in self.framelets])
 
     @property
-    def image(self):
+    def image(self) -> np.ndarray:
         return np.stack([frame.image for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
     @property
-    def coords(self):
+    def coords(self) -> np.ndarray:
         return np.stack([frame.coords for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH, 2))
 
     @property
-    def emission(self):
+    def emission(self) -> np.ndarray:
         return np.stack([frame.emission for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
     @property
-    def incidence(self):
+    def incidence(self) -> np.ndarray:
         return np.stack([frame.incidence for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
     @property
-    def longitude(self):
+    def longitude(self) -> np.ndarray:
         return np.stack([frame.lon for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
     @property
-    def latitude(self):
+    def latitude(self) -> np.ndarray:
         return np.stack([frame.lat for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
 
 class Framelet:
-    def __init__(self, start_et, frame_delay, frame_no, color, img):
+    def __init__(self, start_et: float, frame_delay: float, frame_no: int, color: int, img: np.ndarray):
         self.start_et = start_et
         self.frame_delay = frame_delay
         self.frame_no = frame_no
@@ -138,7 +130,7 @@ class Framelet:
         self.camera = CameraModel(color)
 
     @property
-    def et(self):
+    def et(self) -> float:
         jitter = 0 if self.jitter is None else self.jitter
         return (
             self.start_et
@@ -147,7 +139,7 @@ class Framelet:
             + (self.frame_delay + self.camera.iframe_delay) * self.frame_no
         )
 
-    def project_to_midplane(self, tmid):
+    def project_to_midplane(self, tmid: float) -> None:
         coords = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 2))
         lat = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
         lon = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
@@ -168,6 +160,8 @@ class Framelet:
 
         # geometry correction
         self.fluxcal = fluxcal
+
+        return self
 
 
 # for decompanding -- taken from Kevin Gill's github page
@@ -197,7 +191,7 @@ SQROOT = np.array(
 )
 
 
-def decompand(image):
+def decompand(image: np.ndarray) -> np.ndarray:
     """
     Decompands the image from the 8-bit in the public release
     to the original 12-bit shot by JunoCam
@@ -215,7 +209,7 @@ def decompand(image):
     data = np.array(255 * image, dtype=np.uint8)
     ny, nx = data.shape
 
-    def get_sqrt(x):
+    def get_sqrt(x: float) -> float:
         return SQROOT[x]
     v_get_sqrt = np.vectorize(get_sqrt)
 
