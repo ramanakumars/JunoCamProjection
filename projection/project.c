@@ -241,7 +241,7 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
             pixvec[2] / sqrtf(pixvec[0] * pixvec[0] + pixvec[1] * pixvec[1] +
                               pixvec[2] * pixvec[2]);
         fluxcal[jj * FRAME_WIDTH + ii] =
-            (M_PI / 4.) *
+            (M_PI / 4.) * pow(disti, 2.) * 
             pow((aperture / focal_length) * cosalpha * cosalpha, 2);
       }
     }
