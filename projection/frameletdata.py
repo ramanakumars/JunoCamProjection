@@ -156,7 +156,6 @@ class Framelet:
         self.emission = emission
         self.incidence = incidence
 
-
         return self
 
 
