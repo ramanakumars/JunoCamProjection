@@ -51,8 +51,8 @@ class Projector:
             spice.furnsh(kernel)
             self.kernels.append(kernel)
 
-    def find_jitter(self, jitter_max=25, plot=False, threshold=0.1):
-        threshold = threshold * self.framedata.fullimg.max()
+    def find_jitter(self, jitter_max=25, plot=False, threshold=2):
+        threshold = np.percentile(self.framedata.fullimg.flatten(), threshold)
 
         for nci in range(self.framedata.nframes * 3):
             # find whether the planet limb is in now
@@ -309,74 +309,4 @@ def create_image_from_grid(coords, imgvals, pix, inds, img_shape, n_neighbor=5, 
 
     IMG[~np.isfinite(IMG)] = 0.
 
-    '''
-    # break up the image and coordinate data into the different filters
-    Rcoords = coords[2, :]
-    Gcoords = coords[1, :]
-    Bcoords = coords[0, :]
-
-    Rmask = np.isfinite(Rcoords[:, 0] * Rcoords[:, 1])
-    Gmask = np.isfinite(Gcoords[:, 0] * Gcoords[:, 1])
-    Bmask = np.isfinite(Bcoords[:, 0] * Bcoords[:, 1])
-
-    Rcoords = Rcoords[Rmask]
-    Gcoords = Gcoords[Gmask]
-    Bcoords = Bcoords[Bmask]
-
-    Rimg = imgvals[2, Rmask]
-    Gimg = imgvals[1, Gmask]
-    Bimg = imgvals[0, Bmask]
-
-    # fit the nearest neighbour algorithm
-    print("Fitting neighbors")
-    Rneigh = NearestNeighbors().fit(Rcoords)
-    Gneigh = NearestNeighbors().fit(Gcoords)
-    Bneigh = NearestNeighbors().fit(Bcoords)
-
-    # get the corresponding pixel coordinates in the original image for each filter
-    print("Finding neighbors for new image")
-    R_dist, R_ind = Rneigh.kneighbors(pix, n_neighbor)
-    G_dist, G_ind = Gneigh.kneighbors(pix, n_neighbor)
-    B_dist, B_ind = Bneigh.kneighbors(pix, n_neighbor)
-
-    # convert the distance to weights. the farther the point from the
-    # target pixel, the less weight it has in the final average
-    # add a small epsilon if we accidently are on the exact same point
-    R_wght = 1. / (R_dist + 1.e-16)
-    G_wght = 1. / (G_dist + 1.e-16)
-    B_wght = 1. / (B_dist + 1.e-16)
-
-    # normalize the weights
-    R_wght = R_wght / np.sum(R_wght, axis=1, keepdims=True)
-    G_wght = G_wght / np.sum(G_wght, axis=1, keepdims=True)
-    B_wght = B_wght / np.sum(B_wght, axis=1, keepdims=True)
-
-    R_wght[R_dist.min(axis=1) > min_dist] = 0.
-    G_wght[G_dist.min(axis=1) > min_dist] = 0.
-    B_wght[B_dist.min(axis=1) > min_dist] = 0.
-
-    # get the weighted NN average for each pixel
-    print("Calculating image values at new locations")
-    R_vals = np.sum(np.take(Rimg, R_ind, axis=0) * R_wght, axis=1)
-    G_vals = np.sum(np.take(Gimg, G_ind, axis=0) * G_wght, axis=1)
-    B_vals = np.sum(np.take(Bimg, B_ind, axis=0) * B_wght, axis=1)
-
-    IMG = np.zeros((*img_shape, 3))
-    # loop through each point observed by JunoCam and assign the pixel value
-    for k, ind in enumerate(tqdm.tqdm(inds, desc='Building image')):
-        if len(img_shape) == 2:
-            j, i = np.unravel_index(ind, img_shape)
-
-            # do the weighted average for each filter
-            IMG[j, i, 0] = R_vals[k]
-            IMG[j, i, 1] = G_vals[k]
-            IMG[j, i, 2] = B_vals[k]
-        else:
-            IMG[ind, 0] = R_vals[k]
-            IMG[ind, 1] = G_vals[k]
-            IMG[ind, 2] = B_vals[k]
-
-    IMG[~np.isfinite(IMG)] = 0.
-    '''
-
-    return IMG
+    return np.flip(IMG, axis=-1)
