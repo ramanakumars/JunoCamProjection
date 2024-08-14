@@ -17,26 +17,23 @@ class FrameletData:
         # number of RGB frames
         self.nframes = int(self.nframelets / 3)
 
-        print(f'Determined {self.nframes} from metadata')
+        print(f'Found {self.nframes} RGB frames')
 
         start_utc = metadata["START_TIME"]
         self.start_et = spice.str2et(start_utc)
         fname = metadata["FILE_NAME"].replace("-raw.png", "")
-        self.fullimg = plt.imread(imgfolder + "%s-raw.png" % fname)
+        fullimg = plt.imread(imgfolder + "%s-raw.png" % fname)
 
         # ignore color channels in the image
-        if len(self.fullimg.shape) == 3:
-            self.fullimg = self.fullimg.mean(axis=-1)
+        if len(fullimg.shape) == 3:
+            fullimg = fullimg.mean(axis=-1)
 
         self.sclat = float(metadata["SUB_SPACECRAFT_LATITUDE"])
         self.sclon = float(metadata["SUB_SPACECRAFT_LONGITUDE"])
 
         # get the exposure and convert to seconds
         self.exposure = (
-            float(
-                metadata["EXPOSURE_DURATION"].replace("<ms>", "").strip()
-            )
-            / 1.0e3
+            float(metadata["EXPOSURE_DURATION"].replace("<ms>", "").strip()) / 1.0e3
         )
 
         intframe_delay = metadata["INTERFRAME_DELAY"].split(" ")
@@ -58,14 +55,16 @@ class FrameletData:
                 endrow = 3 * FRAME_HEIGHT * n + (c + 1) * FRAME_HEIGHT
                 flati = self.flatfield[(c * FRAME_HEIGHT): ((c + 1) * FRAME_HEIGHT), :]
 
-                img = self.fullimg[startrow:endrow, :]
+                img = fullimg[startrow:endrow, :]
                 framei = decompand(img) / 16384
                 framei = framei / (flati * self.exposure)
 
                 self.framelets.append(Framelet(self.start_et, frame_delay, n, c, framei))
 
+        self.fullimg = np.concatenate([frame.rawimg for frame in self.framelets], axis=0)
+
     def get_backplane(self, num_procs: int):
-        tmid = np.mean([frame.et for frame in self.framelets])
+        tmid = self.tmid
 
         if num_procs > 1:
             inpargs = [(frame, tmid) for frame in self.framelets]
@@ -133,10 +132,7 @@ class Framelet:
     def et(self) -> float:
         jitter = 0 if self.jitter is None else self.jitter
         return (
-            self.start_et
-            + self.camera.time_bias
-            + jitter
-            + (self.frame_delay + self.camera.iframe_delay) * self.frame_no
+            self.start_et + self.camera.time_bias + jitter + (self.frame_delay + self.camera.iframe_delay) * self.frame_no
         )
 
     def project_to_midplane(self, tmid: float) -> None:
@@ -149,8 +145,10 @@ class Framelet:
 
         project_midplane_c(self.et, self.color, tmid, lon, lat, incidence, emission, coords, fluxcal)
 
+        # geometry correction
+        self.fluxcal = fluxcal
         self.coords = coords
-        self.image = self.rawimg / fluxcal
+        self.image = self.rawimg / self.fluxcal
         self.lat = lat
         self.lon = lon
 
@@ -158,8 +156,6 @@ class Framelet:
         self.emission = emission
         self.incidence = incidence
 
-        # geometry correction
-        self.fluxcal = fluxcal
 
         return self
 

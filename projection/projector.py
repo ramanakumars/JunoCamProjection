@@ -51,8 +51,8 @@ class Projector:
             spice.furnsh(kernel)
             self.kernels.append(kernel)
 
-    def find_jitter(self, jitter_max=25, plot=False):
-        threshold = 0.1 * self.framedata.fullimg.max()
+    def find_jitter(self, jitter_max=25, plot=False, threshold=0.1):
+        threshold = threshold * self.framedata.fullimg.max()
 
         for nci in range(self.framedata.nframes * 3):
             # find whether the planet limb is in now
@@ -199,11 +199,11 @@ class Projector:
         if correction_type == 'ls':
             print("Applying Lommel-Seeliger correction")
             for frame in self.framedata.framelets:
-                frame.image = apply_lommel_seeliger(frame.image, frame.incidence, frame.emission)
+                frame.image = apply_lommel_seeliger(frame.rawimg / frame.fluxcal, frame.incidence, frame.emission)
         elif correction_type == 'minneart':
             print("Applying Minneart correction")
             for frame in self.framedata.framelets:
-                frame.image = apply_minneart(frame.image, frame.incidence, frame.emission, k=minneart_k)
+                frame.image = apply_minneart(frame.rawimg / frame.fluxcal, frame.incidence, frame.emission, k=minneart_k)
 
     @property
     def framecoords(self):
@@ -213,7 +213,7 @@ class Projector:
     def imagevalues(self):
         return np.transpose(self.framedata.image, (1, 0, 2, 3)).reshape(3, -1)
 
-    def project_to_healpix(self, nside, coords, imgvals, n_neighbor=4):
+    def project_to_healpix(self, nside, coords, imgvals, n_neighbor=4, min_dist=25):
         # get the image extents in pixel coordinate space
         # clip half a pixel to avoid edge artifacts
         x0 = np.nanmin(coords[:, :, 0]) + 0.5
@@ -241,7 +241,7 @@ class Projector:
         pixel_inds = hp.ang2pix(nside, longrid[inds], latgrid[inds], lonlat=True)
 
         # finally, project the image onto the healpix grid
-        m = create_image_from_grid(coords, imgvals, pix, pixel_inds, longrid.shape, n_neighbor=n_neighbor)
+        m = create_image_from_grid(coords, imgvals, pix, pixel_inds, longrid.shape, n_neighbor=n_neighbor, min_dist=min_dist)
 
         return m
 
@@ -281,14 +281,11 @@ def create_image_from_grid(coords, imgvals, pix, inds, img_shape, n_neighbor=5, 
         the inds variable.
     '''
     nchannels, ncoords, _ = coords.shape
-    mask = np.ones(coords.shape[1], dtype=bool)
-    for n in range(nchannels):
-        maski = np.isfinite(coords[n, :, 0] * coords[n, :, 1])
-        mask = mask & maski
 
     newvals = np.zeros((nchannels, pix.shape[0]))
     print("Calculating image values at new locations")
     for n in range(nchannels):
+        mask = np.isfinite(coords[n, :, 0] * coords[n, :, 1])
         neighbors = NearestNeighbors().fit(coords[n][mask])
         dist, indi = neighbors.kneighbors(pix, n_neighbor)
         weight = 1. / (dist + 1.e-16)
