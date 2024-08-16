@@ -37,7 +37,7 @@ def download_kernel(kernel, KERNEL_DATAFOLDER):
             f.write(response.content)
         else:
             total_length = int(total_length)
-            with tqdm.tqdm(total=total_length, unit='B', unit_scale=True, unit_divisor=1024, ascii=True, desc=f'Downloading {kernel}') as pbar:
+            with tqdm.tqdm(total=total_length, unit='B', unit_scale=True, dynamic_ncols=True, unit_divisor=1024, ascii=True, desc=f'Downloading {kernel}') as pbar:
                 for data in tqdm.tqdm(response.iter_content(chunk_size=4096)):
                     f.write(data)
                     pbar.update(len(data))
