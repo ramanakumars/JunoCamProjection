@@ -8,14 +8,28 @@ import tqdm
 BASEURL = 'https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/'
 
 
-def fetch_kernels_from_https(path, pattern):
+def fetch_kernels_from_https(path: str, pattern: str) -> list[str]:
+    """Fetch kernels from URL matching a given pattern
+
+    :param path: URL at which to search for kernels (will parse HTML links in this URL)
+    :param pattern: file-name pattern to search for relevant links
+
+    :return: list of files that match the given pattern
+    """
     with requests.get(path) as response:
         soup = BeautifulSoup(response.text, 'html.parser')
     kernels_all = [a['href'] for a in soup.find('pre').find_all('a')]
     return fnmatch.filter(kernels_all, pattern)
 
 
-def check_and_download_kernels(kernels, KERNEL_DATAFOLDER):
+def check_and_download_kernels(kernels: list[str], KERNEL_DATAFOLDER: str) -> list[str]:
+    """Check whether the list of kernels are in the local directory and download them if needed.
+
+    :param kernels: list of kernel filenames (relative to the root URL)
+    :param KERNEL_DATAFOLDER: path to the local kernel directory to store downloaded kernels
+
+    :return: list of local paths to the kernels
+    """
     kernel_fnames = []
     for kernel in kernels:
         if not os.path.exists(os.path.join(KERNEL_DATAFOLDER, kernel)):
@@ -25,7 +39,12 @@ def check_and_download_kernels(kernels, KERNEL_DATAFOLDER):
     return kernel_fnames
 
 
-def download_kernel(kernel, KERNEL_DATAFOLDER):
+def download_kernel(kernel: str, KERNEL_DATAFOLDER: str) -> None:
+    """Download a given kernel to the local folder
+
+    :param kernel: URL path to the kernel
+    :param KERNEL_DATAFOLDER: root folder to store the downloaded kernel
+    """
     link = os.path.join(BASEURL, kernel)
     file_name = os.path.join(KERNEL_DATAFOLDER, kernel)
     with open(file_name, "wb") as f:
@@ -43,7 +62,14 @@ def download_kernel(kernel, KERNEL_DATAFOLDER):
                     pbar.update(len(data))
 
 
-def get_kernels(KERNEL_DATAFOLDER, start_utc):
+def get_kernels(KERNEL_DATAFOLDER: str, start_utc: float) -> list[str]:
+    """Fetch all relevant kernels for JunoCam at a given time
+
+    :param KERNEL_DATAFOLDER: path to the local kernel directory to store downloaded kernels
+    :param start_utc: the spacecraft clock time in start_utc
+
+    :return: list of local paths to the kernels
+    """
     if not os.path.exists(KERNEL_DATAFOLDER):
         os.mkdir(KERNEL_DATAFOLDER)
 

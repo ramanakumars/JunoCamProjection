@@ -17,17 +17,15 @@ class Projector:
     """
     The main projector class that determines the surface intercept points
     of each pixel in a JunoCam image
-
-    Methods
-    -------
-    load_kernels: Determines and loads the required SPICE kernels
-        for processing
-    process_n_c : Projects an individual framelet in the JunoCam raw image
-    process     : Driver for the projection that handles
-        parallel processing
     """
 
-    def __init__(self, imagefolder, meta, kerneldir="."):
+    def __init__(self, imagefolder: str, meta: str, kerneldir: str = "./kernels/"):
+        """Initializes the Projector
+
+        :param imagefolder: Path to the folder containing the image files
+        :param meta: Path to the metadata JSON file
+        :param kerneldir: Path to folder where SPICE kernels will be stored, defaults to "./"
+        """
         with open(meta, "r") as metafile:
             metadata = json.load(metafile)
 
@@ -43,7 +41,11 @@ class Projector:
 
         self.find_jitter(jitter_max=120)
 
-    def load_kernels(self, KERNEL_DATAFOLDER):
+    def load_kernels(self, KERNEL_DATAFOLDER: str) -> None:
+        """Get the kernels for the current spacecraft time and load them
+
+        :param KERNEL_DATAFOLDER: path to the folder where kernels are stored
+        """
         self.kernels = []
         kernels = get_kernels(KERNEL_DATAFOLDER, self.start_utc)
         for kernel in kernels:
@@ -51,7 +53,14 @@ class Projector:
             spice.furnsh(kernel)
             self.kernels.append(kernel)
 
-    def find_jitter(self, jitter_max=25, plot=False, threshold=80):
+    def find_jitter(self, jitter_max: float = 25, threshold: float = 80, plot: bool = False) -> None:
+        """Find the best jitter value to the spacecraft camera time
+
+
+        :param jitter_max: Maximum value to search for the jitter [millseconds], defaults to 25
+        :param threshold: percentile value to use to find the planet's limb, defaults to 80
+        :param plot: boolean flag for whether to plot the intermediate steps for debugging, defaults to False
+        """
         threshold = np.percentile(self.framedata.fullimg.flatten(), threshold)
 
         for nci in range(self.framedata.nframes * 3):
@@ -153,7 +162,14 @@ class Projector:
             plt.plot(limbs_jcam[:, 0], limbs_jcam[:, 1], "g.", markersize=0.1)
             plt.show()
 
-    def get_limb(self, eti, cami):
+    def get_limb(self, eti: float, cami: CameraModel) -> np.ndarray:
+        """Find the pixel positions of the planet's limb for a given camera frame at a specific time
+
+        :param eti: spacecraft clock time in seconds
+        :param cami: the camera which is used for observing
+
+        :return: the pixel positions of the limb of the planet in the camera frame (shape: (npix, 2))
+        """
         METHOD = "TANGENT/ELLIPSOID"
         CORLOC = "ELLIPSOID LIMB"
 
@@ -184,7 +200,17 @@ class Projector:
 
         return limbs_jcam
 
-    def process(self, nside=512, num_procs=8, apply_correction='ls', n_neighbor=5, minneart_k=1.25):
+    def process(self, nside: int = 512, num_procs: int = 8, apply_correction: str = 'ls', n_neighbor: int = 5, minneart_k: float = 1.25) -> np.ndarray:
+        """Processes the current image into a HEALPix map of a given resolution. Also applies lightning correction as needed.
+
+        :param nside: resolution of the HEALPix map. See https://healpy.readthedocs.io/en/latest/tutorial.html, defaults to 512
+        :param num_proces: number of cores to use for projection. Set to 1 to disable multithreading, defaults to 8
+        :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minneart' for Minneart and 'none' for no correction, defaults to 'ls'
+        :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
+        :param minneart_k: the index for Minneart correction. Only used when apply_correction='minneart', defaults to 1.25
+
+        :return: the HEALPix map of the projected image (shape: (npixels, 3), where npixels is the corresponding image size for a given n_side)
+        """
         print(f"Projecting {self.fname} to a HEALPix grid with n_side={nside}")
 
         self.framedata.get_backplane(num_procs)
@@ -195,7 +221,14 @@ class Projector:
 
         return map
 
-    def apply_correction(self, correction_type, minneart_k=1.25):
+    def apply_correction(self, correction_type: str, minneart_k: float = 1.25) -> None:
+        """Apply the requested illumination correction
+
+        This function updates the framelet's `image` variable in-place and does not return a value
+
+        :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minneart' for Minneart and 'none' for no correction, defaults to 'ls'
+        :param minneart_k: the index for Minneart correction. Only used when apply_correction='minneart', defaults to 1.25
+        """
         if correction_type == 'ls':
             print("Applying Lommel-Seeliger correction")
             for frame in self.framedata.framelets:
@@ -210,14 +243,26 @@ class Projector:
                 frame.image = frame.rawimg / frame.fluxcal
 
     @property
-    def framecoords(self):
+    def framecoords(self) -> np.ndarray:
+        """Get the coordinates of each pixel in the current camera frame in the midplane frame
+        """
         return np.transpose(self.framedata.coords, (1, 0, 2, 3, 4)).reshape(3, -1, 2)
 
     @property
-    def imagevalues(self):
+    def imagevalues(self) -> np.ndarray:
+        """Get the illumination corrected image values from each frame
+        """
         return np.transpose(self.framedata.image, (1, 0, 2, 3)).reshape(3, -1)
 
-    def project_to_healpix(self, nside, n_neighbor=4, min_dist=25):
+    def project_to_healpix(self, nside: int, n_neighbor: int = 4, max_dist: int = 25) -> np.ndarray:
+        """Project the current image to a HEALPix map
+
+        :param nside: resolution of the HEALPix map. See https://healpy.readthedocs.io/en/latest/tutorial.html
+        :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
+        :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
+
+        :return: the HEALPix map of the projected image (shape: (npixels, 3), where npixels is the corresponding image size for a given n_side)
+        """
         # get the image extents in pixel coordinate space
         # clip half a pixel to avoid edge artifacts
         x0 = np.nanmin(self.framecoords[:, :, 0]) + 0.5
@@ -245,14 +290,19 @@ class Projector:
         pixel_inds = hp.ang2pix(nside, longrid[inds], latgrid[inds], lonlat=True)
 
         # finally, project the image onto the healpix grid
-        m = create_image_from_grid(self.framecoords, self.imagevalues, pix, pixel_inds, longrid.shape, n_neighbor=n_neighbor, min_dist=min_dist)
+        m = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix, longrid.shape, n_neighbor=n_neighbor, max_dist=max_dist)
 
         return m
 
 
-def apply_lommel_seeliger(imgvals, incidence, emission):
-    '''
-        Apply the Lommel-Seeliger correction for incidence
+def apply_lommel_seeliger(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray) -> np.ndarray:
+    '''Apply the Lommel-Seeliger correction for incidence
+
+    :param imgvals: the raw image values
+    :param incidence: the incidence angles (in radians) for each pixel in `imgvals`
+    :param emission: the emission angles (in radians) for each pixel in `imgvals`
+
+    :return: the corrected image values with the same shape as `imgvals`
     '''
     # apply Lommel-Seeliger correction
     mu0 = np.cos(incidence)
@@ -264,7 +314,16 @@ def apply_lommel_seeliger(imgvals, incidence, emission):
     return imgvals
 
 
-def apply_minneart(imgvals, incidence, emission, k=1.25):
+def apply_minneart(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray, k: float = 1.25) -> np.ndarray:
+    """Apply the Minneart illumination correction
+
+    :param imgvals: the raw image values
+    :param incidence: the incidence angles (in radians) for each pixel in `imgvals`
+    :param emission: the emission angles (in radians) for each pixel in `imgvals`
+    :param minnaert_k: the index for Minneart correction, defaults to 1.25
+
+    :return: the corrected image values with the same shape as `imgvals`
+    """
     # apply Minneart correction
     mu0 = np.cos(incidence)
     mu = np.cos(emission)
@@ -276,13 +335,24 @@ def apply_minneart(imgvals, incidence, emission, k=1.25):
     return imgvals
 
 
-def create_image_from_grid(coords, imgvals, pix, inds, img_shape, n_neighbor=5, min_dist=25.):
+def create_image_from_grid(coords: np.ndarray, imgvals: np.ndarray, inds: np.ndarray, pix: np.ndarray,
+                           img_shape: tuple[int], n_neighbor: int = 5, max_dist: float = 25.):
     '''
         Reproject an irregular spaced image onto a regular grid from a list of coordinate
         locations and corresponding image values. This uses an inverse lookup-table defined
         by `pix`, where pix gives the coordinates in the original image where the corresponding
         pixel coordinate on the new image should be. The coordinate on the new image is given by
-        the inds variable.
+        the `inds`.
+
+    :param coords: the pixel coordinates in the original image
+    :param imgvals: the image values corresponding to coords
+    :param inds: the coordinate on the new image where we need to interpolate
+    :param pix: the coordinate in the original image corresponding to each pixel in inds
+    :param img_shape: the shape of the new image
+    :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
+    :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
+
+    :return: the interpolated new image of shape `img_shape` where every pixel at `inds` has corresponding values interpolated from `imgvals`
     '''
     nchannels, ncoords, _ = coords.shape
 
@@ -294,7 +364,7 @@ def create_image_from_grid(coords, imgvals, pix, inds, img_shape, n_neighbor=5, 
         dist, indi = neighbors.kneighbors(pix, n_neighbor)
         weight = 1. / (dist + 1.e-16)
         weight = weight / np.sum(weight, axis=1, keepdims=True)
-        weight[dist > min_dist] = 0.
+        weight[dist > max_dist] = 0.
 
         newvals[n, :] = np.sum(np.take(imgvals[n][mask], indi, axis=0) * weight, axis=1)
 
