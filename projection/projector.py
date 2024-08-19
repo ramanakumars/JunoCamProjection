@@ -51,7 +51,7 @@ class Projector:
             spice.furnsh(kernel)
             self.kernels.append(kernel)
 
-    def find_jitter(self, jitter_max=25, plot=False, threshold=2):
+    def find_jitter(self, jitter_max=25, plot=False, threshold=80):
         threshold = np.percentile(self.framedata.fullimg.flatten(), threshold)
 
         for nci in range(self.framedata.nframes * 3):
@@ -63,7 +63,7 @@ class Projector:
             frame = self.framedata.framelets[nci].rawimg
             eti = self.framedata.framelets[nci].et
 
-            if len(frame[frame > threshold]) > 5000:
+            if np.sum(frame > threshold) > 5000:
                 # make sure that the limb is also in the image
                 # we want to find a frame where both the predicted limb
                 # with no jitter and the actual limb are visible so that
@@ -184,14 +184,14 @@ class Projector:
 
         return limbs_jcam
 
-    def process(self, nside=512, num_procs=8, apply_correction='minneart', n_neighbor=5, minneart_k=1.25):
+    def process(self, nside=512, num_procs=8, apply_correction='ls', n_neighbor=5, minneart_k=1.25):
         print(f"Projecting {self.fname} to a HEALPix grid with n_side={nside}")
 
         self.framedata.get_backplane(num_procs)
 
         self.apply_correction(apply_correction, minneart_k)
 
-        map = self.project_to_healpix(nside, self.framecoords, self.imagevalues, n_neighbor=n_neighbor)
+        map = self.project_to_healpix(nside, n_neighbor=n_neighbor)
 
         return map
 
@@ -204,6 +204,10 @@ class Projector:
             print("Applying Minneart correction")
             for frame in self.framedata.framelets:
                 frame.image = apply_minneart(frame.rawimg / frame.fluxcal, frame.incidence, frame.emission, k=minneart_k)
+        elif correction_type == 'none':
+            print("Applying no correction")
+            for frame in self.framedata.framelets:
+                frame.image = frame.rawimg / frame.fluxcal
 
     @property
     def framecoords(self):
@@ -213,13 +217,13 @@ class Projector:
     def imagevalues(self):
         return np.transpose(self.framedata.image, (1, 0, 2, 3)).reshape(3, -1)
 
-    def project_to_healpix(self, nside, coords, imgvals, n_neighbor=4, min_dist=25):
+    def project_to_healpix(self, nside, n_neighbor=4, min_dist=25):
         # get the image extents in pixel coordinate space
         # clip half a pixel to avoid edge artifacts
-        x0 = np.nanmin(coords[:, :, 0]) + 0.5
-        x1 = np.nanmax(coords[:, :, 0]) - 0.5
-        y0 = np.nanmin(coords[:, :, 1]) + 0.5
-        y1 = np.nanmax(coords[:, :, 1]) - 0.5
+        x0 = np.nanmin(self.framecoords[:, :, 0]) + 0.5
+        x1 = np.nanmax(self.framecoords[:, :, 0]) - 0.5
+        y0 = np.nanmin(self.framecoords[:, :, 1]) + 0.5
+        y1 = np.nanmax(self.framecoords[:, :, 1]) - 0.5
 
         extents = np.array([x0, x1, y0, y1])
 
@@ -241,7 +245,7 @@ class Projector:
         pixel_inds = hp.ang2pix(nside, longrid[inds], latgrid[inds], lonlat=True)
 
         # finally, project the image onto the healpix grid
-        m = create_image_from_grid(coords, imgvals, pix, pixel_inds, longrid.shape, n_neighbor=n_neighbor, min_dist=min_dist)
+        m = create_image_from_grid(self.framecoords, self.imagevalues, pix, pixel_inds, longrid.shape, n_neighbor=n_neighbor, min_dist=min_dist)
 
         return m
 
