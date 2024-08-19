@@ -134,3 +134,6 @@ dmypy.json
 
 # Kernels
 kernels/
+
+# docs
+docs/build/
