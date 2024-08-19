@@ -1,0 +1,11 @@
+## Requirements for projection 
+numpy
+scipy
+matplotlib
+spiceypy
+scikit-learn
+scikit-image
+tqdm
+healpy
+m2r
+nbsphinx
