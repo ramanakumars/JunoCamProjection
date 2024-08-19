@@ -47,7 +47,7 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
     'sphinx.ext.githubpages',
-    'm2r'
+    'nbsphinx'
 ]
 
 # napolean options

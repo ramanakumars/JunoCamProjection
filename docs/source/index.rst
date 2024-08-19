@@ -13,5 +13,5 @@ from JunoCam and stack them to create a full globe mosaic.
    :maxdepth: 2
    :caption: Contents
 
-   readme_link
    Projection module <projection.rst>
+   Projecting a JunoCam Image <notebooks/projection.ipynb>
