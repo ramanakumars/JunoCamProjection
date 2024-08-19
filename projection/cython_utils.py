@@ -6,7 +6,7 @@ import ctypes
 project_c = np.ctypeslib.load_library("project.so", os.path.dirname(__file__))
 
 array_1d_int = np.ctypeslib.ndpointer(
-    dtype=np.int, ndim=1, flags="C_CONTIGUOUS"
+    dtype=int, ndim=1, flags="C_CONTIGUOUS"
 )
 array_1d_double = np.ctypeslib.ndpointer(
     dtype=np.double, ndim=1, flags="C_CONTIGUOUS"

@@ -131,3 +131,6 @@ dmypy.json
 *.png
 *.json
 *.npy
+
+# Kernels
+kernels/
