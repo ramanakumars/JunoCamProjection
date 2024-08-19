@@ -12,7 +12,14 @@ import multiprocessing
 
 
 class FrameletData:
+    """Holds information and methods pertaining to all the framelets in the image
+    """
     def __init__(self, metadata: dict, imgfolder: str):
+        """Initialize the structure by reading in the metadata and separating the framelets in the image
+
+        :param metadata: input image metadata
+        :param imgfolder: path to the folder where the image is stored
+        """
         self.nframelets = int(metadata["LINES"] / FRAME_HEIGHT)
         # number of RGB frames
         self.nframes = int(self.nframelets / 3)
@@ -63,7 +70,11 @@ class FrameletData:
 
         self.fullimg = np.concatenate([frame.rawimg for frame in self.framelets], axis=0)
 
-    def get_backplane(self, num_procs: int):
+    def get_backplane(self, num_procs: int) -> None:
+        """Retrieve backplane information for all framelets (i.e., get pixel coordinates in the mid-plane frame and also incidence/emission angles)
+
+        :param num_procs: number of processors to use for multi-threaded processing
+        """
         tmid = self.tmid
 
         if num_procs > 1:
@@ -84,42 +95,61 @@ class FrameletData:
             for frame in tqdm.tqdm(self.framelets):
                 frame.project_to_midplane(tmid)
 
-    def update_jitter(self, jitter: float):
+    def update_jitter(self, jitter: float) -> None:
+        """Update the jitter in the spacecraft clock for each framelet
+
+        :param jitter: the new jitter value in seconds
+        """
         self.jitter = jitter
         for framelet in self.framelets:
             framelet.jitter = jitter
 
     @property
     def tmid(self) -> float:
+        """The mid-plane clock time"""
         return np.mean([frame.et for frame in self.framelets])
 
     @property
     def image(self) -> np.ndarray:
+        """The concatenated illumination-corrected image in all the framelets"""
         return np.stack([frame.image for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
     @property
     def coords(self) -> np.ndarray:
+        """The concatenated coordinate of each pixel in the mid-plane frame for each pixel in the camera frame"""
         return np.stack([frame.coords for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH, 2))
 
     @property
     def emission(self) -> np.ndarray:
+        """The concatenated emission angles for each pixel in the mid-plane frame"""
         return np.stack([frame.emission for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
     @property
     def incidence(self) -> np.ndarray:
+        """The concatenated incidence angles for each pixel in the mid-plane frame"""
         return np.stack([frame.incidence for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
     @property
     def longitude(self) -> np.ndarray:
+        """The concatenated Sys III longitude values for each pixel in the mid-plane frame"""
         return np.stack([frame.lon for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
     @property
     def latitude(self) -> np.ndarray:
+        """The concatenated planetographic latitude value for each pixel in the mid-plane frame"""
         return np.stack([frame.lat for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
 
 class Framelet:
+    """Holds information and methods for a single framelet in the JunoCam image"""
     def __init__(self, start_et: float, frame_delay: float, frame_no: int, color: int, img: np.ndarray):
+        """Initialize the framelet with relevant spacecraft data and camera information
+
+        :param start_et: the spacecraft clock time for the start of the exposure in ET
+        :param frame_delay: the inter-frame delay for this camera
+        :param frame_no: the index of the 3-color subframe (i.e., the 4th framelet is blue frame #2)
+        :param color: the filter for this framelet (i.e., 0 for blue, 1 for green and 2 for red)
+        """
         self.start_et = start_et
         self.frame_delay = frame_delay
         self.frame_no = frame_no
@@ -130,12 +160,17 @@ class Framelet:
 
     @property
     def et(self) -> float:
+        """Get the observation time for this framelet"""
         jitter = 0 if self.jitter is None else self.jitter
         return (
             self.start_et + self.camera.time_bias + jitter + (self.frame_delay + self.camera.iframe_delay) * self.frame_no
         )
 
-    def project_to_midplane(self, tmid: float) -> None:
+    def project_to_midplane(self, tmid: float):
+        """Get the backplane information at the mid-plane frame for this framelet. Returns self for multi-processing
+
+        :param tmid: the spacecraft clock at the mid-plane frame
+        """
         coords = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 2))
         lat = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
         lon = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
@@ -187,19 +222,12 @@ SQROOT = np.array(
 
 
 def decompand(image: np.ndarray) -> np.ndarray:
-    """
-    Decompands the image from the 8-bit in the public release
+    """Decompands the image from the 8-bit in the public release
     to the original 12-bit shot by JunoCam
 
-    Parameters
-    ----------
-    image : numpy.ndarray
-        8-bit input image
+    :param image: 8-bit input image
 
-    Outputs
-    -------
-    data : numpy.ndarray
-        Original 12-bit image
+    :return: Original 12-bit image
     """
     data = np.array(255 * image, dtype=np.uint8)
     ny, nx = data.shape
