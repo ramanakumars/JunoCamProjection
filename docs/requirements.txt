@@ -12,4 +12,3 @@ nbsphinx
 sphinx-rtd-theme
 ipykernel
 lxml_html_clean
-sphinx-mdinclude
