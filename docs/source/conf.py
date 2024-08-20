@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.abspath('../..'))
 # -- Project information -----------------------------------------------------
 
 project = 'JunoCamProjection'
-copyright = '2021, Ramanakumar Sankar'
+copyright = '2024, Ramanakumar Sankar'
 author = 'Ramanakumar Sankar'
 
 # The short X.Y version

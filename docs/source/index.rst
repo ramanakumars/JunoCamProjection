@@ -7,11 +7,16 @@ Welcome to JunoCamProjection's documentation!
 =============================================
 
 The documentation will walk through the main pipeline to project individual images
-from JunoCam and stack them to create a full globe mosaic.
+from JunoCam and stack them to create a full globe mosaic. 
+See the `Projecting a JunoCam Image`_ section for
+a walkthrough on the projection pipeline.
+
+.. _Projecting a JunoCam Image: notebooks/projection.html
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents
 
-   Projection module <projection.rst>
    Projecting a JunoCam Image <notebooks/projection.ipynb>
+   Projection module <projection.rst>
+   README <../../README.md>
