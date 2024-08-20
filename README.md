@@ -33,4 +33,4 @@ See `examples/mosaic.ipynb` for an example of mosaicing two images. To rerun the
 you will need to unzip all the zip files in the `examples/` folder. 
 
 Example of mosaic from multiple images from perijove 27:
-![PJ27](https://github.com/ramanakumars/JunoCamProjection/examples/PJ27_mosaic_RGB.png)
+![PJ27](https://raw.githubusercontent.com/ramanakumars/JunoCamProjection/master/examples/PJ27_mosaic_RGB.png)
