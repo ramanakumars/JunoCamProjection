@@ -201,7 +201,7 @@ class Projector:
 
         return limbs_jcam
 
-    def process(self, nside: int = 512, num_procs: int = 8, apply_correction: str = 'ls', n_neighbor: int = 5, minneart_k: float = 1.25) -> np.ndarray:
+    def process(self, nside: int = 512, num_procs: int = 8, apply_correction: str = 'ls', n_neighbor: int = 5, minneart_k: float = 1.05) -> np.ndarray:
         """Processes the current image into a HEALPix map of a given resolution. Also applies lightning correction as needed.
 
         :param nside: resolution of the HEALPix map. See https://healpy.readthedocs.io/en/latest/tutorial.html, defaults to 512
@@ -222,7 +222,7 @@ class Projector:
 
         return map
 
-    def apply_correction(self, correction_type: str, minneart_k: float = 0.95) -> None:
+    def apply_correction(self, correction_type: str, minneart_k: float = 1.05) -> None:
         """Apply the requested illumination correction
 
         This function updates the framelet's `image` variable in-place and does not return a value
@@ -380,7 +380,7 @@ def apply_lommel_seeliger(imgvals: np.ndarray, incidence: np.ndarray, emission: 
     return imgvals
 
 
-def apply_minneart(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray, k: float = 0.95) -> np.ndarray:
+def apply_minneart(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray, k: float = 1.05) -> np.ndarray:
     """Apply the Minneart illumination correction
 
     :param imgvals: the raw image values
