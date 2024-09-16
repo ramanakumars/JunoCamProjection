@@ -1,6 +1,6 @@
 # Processing and projecting JunoCam images
 
-[<img src="https://readthedocs.org/projects/junocamprojection/badge/?version=latest&style=flat-default">](<LINK>)
+[<img src="https://readthedocs.org/projects/junocamprojection/badge/?version=latest&style=flat-default">](https://junocamprojection.readthedocs.io/en/latest/)
 
 This is a tool to process and project JunoCam images onto a lat/lon grid. 
 
