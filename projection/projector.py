@@ -1,5 +1,6 @@
 import numpy as np
 import json
+import netCDF4 as nc
 from skimage import feature
 from sklearn.metrics import pairwise_distances
 from sklearn.neighbors import NearestNeighbors
@@ -200,14 +201,14 @@ class Projector:
 
         return limbs_jcam
 
-    def process(self, nside: int = 512, num_procs: int = 8, apply_correction: str = 'ls', n_neighbor: int = 5, minneart_k: float = 1.25) -> np.ndarray:
+    def process(self, nside: int = 512, num_procs: int = 8, apply_correction: str = 'ls', n_neighbor: int = 5, minnaert_k: float = 1.05) -> np.ndarray:
         """Processes the current image into a HEALPix map of a given resolution. Also applies lightning correction as needed.
 
         :param nside: resolution of the HEALPix map. See https://healpy.readthedocs.io/en/latest/tutorial.html, defaults to 512
         :param num_proces: number of cores to use for projection. Set to 1 to disable multithreading, defaults to 8
-        :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minneart' for Minneart and 'none' for no correction, defaults to 'ls'
+        :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minnaert' for Minnaert and 'none' for no correction, defaults to 'ls'
         :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
-        :param minneart_k: the index for Minneart correction. Only used when apply_correction='minneart', defaults to 1.25
+        :param minnaert_k: the index for Minnaert correction. Only used when apply_correction='minnaert', defaults to 1.25
 
         :return: the HEALPix map of the projected image (shape: (npixels, 3), where npixels is the corresponding image size for a given n_side)
         """
@@ -215,28 +216,28 @@ class Projector:
 
         self.framedata.get_backplane(num_procs)
 
-        self.apply_correction(apply_correction, minneart_k)
+        self.apply_correction(apply_correction, minnaert_k)
 
         map = self.project_to_healpix(nside, n_neighbor=n_neighbor)
 
         return map
 
-    def apply_correction(self, correction_type: str, minneart_k: float = 1.25) -> None:
+    def apply_correction(self, correction_type: str, minnaert_k: float = 1.05) -> None:
         """Apply the requested illumination correction
 
         This function updates the framelet's `image` variable in-place and does not return a value
 
-        :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minneart' for Minneart and 'none' for no correction, defaults to 'ls'
-        :param minneart_k: the index for Minneart correction. Only used when apply_correction='minneart', defaults to 1.25
+        :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minnaert' for Minnaert and 'none' for no correction, defaults to 'ls'
+        :param minnaert_k: the index for Minnaert correction. Only used when apply_correction='minnaert', defaults to 1.25
         """
         if correction_type == 'ls':
             print("Applying Lommel-Seeliger correction")
             for frame in self.framedata.framelets:
-                frame.image = apply_lommel_seeliger(frame.rawimg / frame.fluxcal, frame.incidence, frame.emission)
-        elif correction_type == 'minneart':
-            print("Applying Minneart correction")
+                frame.image = apply_lommel_seeliger(frame.rawimg / frame.fluxcal, frame.incidence, frame.incidence)
+        elif correction_type == 'minnaert':
+            print("Applying Minnaert correction")
             for frame in self.framedata.framelets:
-                frame.image = apply_minneart(frame.rawimg / frame.fluxcal, frame.incidence, frame.emission, k=minneart_k)
+                frame.image = apply_minnaert(frame.rawimg / frame.fluxcal, frame.incidence, frame.incidence, k=minnaert_k)
         elif correction_type == 'none':
             print("Applying no correction")
             for frame in self.framedata.framelets:
@@ -294,6 +295,71 @@ class Projector:
 
         return m
 
+    @classmethod
+    def load(cls, infile: str, kerneldir: str = './'):
+        '''Load the object from a netCDF file
+
+        :param infile: path to the input .nc file
+        :param kerneldir: Path to folder where SPICE kernels will be stored, defaults to "./"
+
+        :return: the Projector object with the loaded data and backplane information
+        '''
+
+        self = cls.__new__(cls)
+
+        with nc.Dataset(infile, 'r') as indata:
+            self.fname = indata.id
+            self.start_utc = indata.start_utc
+            self.load_kernels(kerneldir)
+
+            self.framedata = FrameletData.from_file(indata.start_et, indata.sub_lon, indata.sub_lat, indata.frame_delay, indata.exposure,
+                                                    indata.variables['rawimage'][:], indata.variables['latitude'][:], indata.variables['longitude'][:],
+                                                    indata.variables['incidence'][:], indata.variables['emission'][:],
+                                                    indata.variables['fluxcal'][:], indata.variables['coords'][:])
+            self.framedata.update_jitter(indata.jitter)
+
+        return self
+
+    def save(self, outfile: str) -> None:
+        '''Save the projection data to a netCDF file
+
+        :param outfile: path to the .nc file to save to
+        '''
+        with nc.Dataset(outfile, 'w') as outdata:
+            outdata.createDimension('frames', self.framedata.nframes)
+            outdata.createDimension('colors', 3)
+            outdata.createDimension('width', 1648)
+            outdata.createDimension('height', 128)
+            outdata.createDimension('xy', 2)
+
+            latitude = outdata.createVariable('latitude', 'float64', ('frames', 'colors', 'height', 'width'))
+            longitude = outdata.createVariable('longitude', 'float64', ('frames', 'colors', 'height', 'width'))
+            incidence = outdata.createVariable('incidence', 'float64', ('frames', 'colors', 'height', 'width'))
+            emission = outdata.createVariable('emission', 'float64', ('frames', 'colors', 'height', 'width'))
+            image = outdata.createVariable('rawimage', 'float64', ('frames', 'colors', 'height', 'width'))
+            fluxcal = outdata.createVariable('fluxcal', 'float64', ('frames', 'colors', 'height', 'width'))
+            coords = outdata.createVariable('coords', 'float64', ('frames', 'colors', 'height', 'width', 'xy'))
+
+            outdata.id = self.fname
+            outdata.start_utc = self.start_utc
+            outdata.start_et = spice.str2et(self.start_utc)
+            outdata.frame_delay = self.framedata.frame_delay
+            outdata.jitter = self.jitter
+            outdata.sub_lat = self.framedata.sclat
+            outdata.sub_lon = self.framedata.sclon
+            outdata.exposure = self.framedata.exposure
+
+            rawimg = np.stack([frame.rawimg for frame in self.framedata.framelets], axis=0).reshape((self.framedata.nframes, 3, 128, 1648))
+            fluxcal = np.stack([frame.fluxcal for frame in self.framedata.framelets], axis=0).reshape((self.framedata.nframes, 3, 128, 1648))
+
+            latitude[:] = self.framedata.latitude[:]
+            longitude[:] = self.framedata.longitude[:]
+            incidence[:] = self.framedata.incidence[:]
+            emission[:] = self.framedata.emission[:]
+            image[:] = rawimg[:]
+            fluxcal[:] = fluxcal[:]
+            coords[:] = self.framedata.coords[:]
+
 
 def apply_lommel_seeliger(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray) -> np.ndarray:
     '''Apply the Lommel-Seeliger correction for incidence
@@ -310,27 +376,29 @@ def apply_lommel_seeliger(imgvals: np.ndarray, incidence: np.ndarray, emission: 
     corr = 1. / (mu + mu0)
     corr[np.abs(incidence) > np.radians(89)] = np.nan
     imgvals = imgvals * corr
+    imgvals[~np.isfinite(imgvals)] = 0.
 
     return imgvals
 
 
-def apply_minneart(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray, k: float = 1.25) -> np.ndarray:
-    """Apply the Minneart illumination correction
+def apply_minnaert(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray, k: float = 1.05, trim=-8) -> np.ndarray:
+    """Apply the Minnaert illumination correction
 
     :param imgvals: the raw image values
     :param incidence: the incidence angles (in radians) for each pixel in `imgvals`
     :param emission: the emission angles (in radians) for each pixel in `imgvals`
-    :param minnaert_k: the index for Minneart correction, defaults to 1.25
+    :param minnaert_k: the index for Minnaert correction, defaults to 0.95
 
     :return: the corrected image values with the same shape as `imgvals`
     """
-    # apply Minneart correction
+    # apply Minnaert correction
     mu0 = np.cos(incidence)
     mu = np.cos(emission)
     corr = (mu ** k) * (mu0 ** (k - 1))
     # log(mu * mu0) < -4 is usually pretty noisy
-    corr[np.log(np.cos(incidence) * np.cos(emission)) < -4] = np.inf
+    corr[np.log(np.cos(incidence) * np.cos(emission)) < trim] = np.inf
     imgvals = imgvals / corr
+    imgvals[~np.isfinite(imgvals)] = 0.
 
     return imgvals
 
