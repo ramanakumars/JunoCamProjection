@@ -201,14 +201,14 @@ class Projector:
 
         return limbs_jcam
 
-    def process(self, nside: int = 512, num_procs: int = 8, apply_correction: str = 'ls', n_neighbor: int = 5, minneart_k: float = 1.05) -> np.ndarray:
+    def process(self, nside: int = 512, num_procs: int = 8, apply_correction: str = 'ls', n_neighbor: int = 5, minnaert_k: float = 1.05) -> np.ndarray:
         """Processes the current image into a HEALPix map of a given resolution. Also applies lightning correction as needed.
 
         :param nside: resolution of the HEALPix map. See https://healpy.readthedocs.io/en/latest/tutorial.html, defaults to 512
         :param num_proces: number of cores to use for projection. Set to 1 to disable multithreading, defaults to 8
-        :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minneart' for Minneart and 'none' for no correction, defaults to 'ls'
+        :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minnaert' for Minnaert and 'none' for no correction, defaults to 'ls'
         :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
-        :param minneart_k: the index for Minneart correction. Only used when apply_correction='minneart', defaults to 1.25
+        :param minnaert_k: the index for Minnaert correction. Only used when apply_correction='minnaert', defaults to 1.25
 
         :return: the HEALPix map of the projected image (shape: (npixels, 3), where npixels is the corresponding image size for a given n_side)
         """
@@ -216,28 +216,28 @@ class Projector:
 
         self.framedata.get_backplane(num_procs)
 
-        self.apply_correction(apply_correction, minneart_k)
+        self.apply_correction(apply_correction, minnaert_k)
 
         map = self.project_to_healpix(nside, n_neighbor=n_neighbor)
 
         return map
 
-    def apply_correction(self, correction_type: str, minneart_k: float = 1.05) -> None:
+    def apply_correction(self, correction_type: str, minnaert_k: float = 1.05) -> None:
         """Apply the requested illumination correction
 
         This function updates the framelet's `image` variable in-place and does not return a value
 
-        :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minneart' for Minneart and 'none' for no correction, defaults to 'ls'
-        :param minneart_k: the index for Minneart correction. Only used when apply_correction='minneart', defaults to 1.25
+        :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minnaert' for Minnaert and 'none' for no correction, defaults to 'ls'
+        :param minnaert_k: the index for Minnaert correction. Only used when apply_correction='minnaert', defaults to 1.25
         """
         if correction_type == 'ls':
             print("Applying Lommel-Seeliger correction")
             for frame in self.framedata.framelets:
                 frame.image = apply_lommel_seeliger(frame.rawimg / frame.fluxcal, frame.incidence, frame.incidence)
-        elif correction_type == 'minneart':
-            print("Applying Minneart correction")
+        elif correction_type == 'minnaert':
+            print("Applying Minnaert correction")
             for frame in self.framedata.framelets:
-                frame.image = apply_minneart(frame.rawimg / frame.fluxcal, frame.incidence, frame.incidence, k=minneart_k)
+                frame.image = apply_minnaert(frame.rawimg / frame.fluxcal, frame.incidence, frame.incidence, k=minnaert_k)
         elif correction_type == 'none':
             print("Applying no correction")
             for frame in self.framedata.framelets:
@@ -380,17 +380,17 @@ def apply_lommel_seeliger(imgvals: np.ndarray, incidence: np.ndarray, emission: 
     return imgvals
 
 
-def apply_minneart(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray, k: float = 1.05) -> np.ndarray:
-    """Apply the Minneart illumination correction
+def apply_minnaert(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray, k: float = 1.05) -> np.ndarray:
+    """Apply the Minnaert illumination correction
 
     :param imgvals: the raw image values
     :param incidence: the incidence angles (in radians) for each pixel in `imgvals`
     :param emission: the emission angles (in radians) for each pixel in `imgvals`
-    :param minnaert_k: the index for Minneart correction, defaults to 0.95
+    :param minnaert_k: the index for Minnaert correction, defaults to 0.95
 
     :return: the corrected image values with the same shape as `imgvals`
     """
-    # apply Minneart correction
+    # apply Minnaert correction
     mu0 = np.cos(incidence)
     mu = np.cos(emission)
     corr = (mu ** k) * (mu0 ** (k - 1))
