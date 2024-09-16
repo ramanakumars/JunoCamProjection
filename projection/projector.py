@@ -356,8 +356,8 @@ class Projector:
             longitude[:] = self.framedata.longitude[:]
             incidence[:] = self.framedata.incidence[:]
             emission[:] = self.framedata.emission[:]
-            image[:] = rawimg
-            fluxcal[:] = fluxcal
+            image[:] = rawimg[:]
+            fluxcal[:] = fluxcal[:]
             coords[:] = self.framedata.coords[:]
 
 
