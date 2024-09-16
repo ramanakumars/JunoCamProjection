@@ -231,7 +231,7 @@ class Framelet:
         lon = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
         incidence = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
         emission = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
-        fluxcal = np.nan * np.zeros((FRAME_HEIGHT, FRAME_WIDTH))
+        fluxcal = np.ones((FRAME_HEIGHT, FRAME_WIDTH))
 
         project_midplane_c(self.et, self.color, tmid, lon, lat, incidence, emission, coords, fluxcal)
 
