@@ -44,16 +44,9 @@ class FrameletData:
         )
 
         intframe_delay = metadata["INTERFRAME_DELAY"].split(" ")
-        frame_delay = float(intframe_delay[0])
+        self.frame_delay = float(intframe_delay[0])
 
-        # flatfield and gain from Brian Swift's GitHub
-        # (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)
-        self.flatfield = np.array(
-            io.imread(
-                os.path.dirname(__file__) + "/cal/flatFieldsSmooth12to16.tiff"
-            )
-        )
-        self.flatfield[self.flatfield == 0] = 1.0
+        self.load_flatfield()
 
         self.framelets = []
         for n in tqdm.tqdm(range(self.nframes), desc='Decompanding'):
@@ -66,9 +59,66 @@ class FrameletData:
                 framei = decompand(img) / 16384
                 framei = framei / (flati * self.exposure)
 
-                self.framelets.append(Framelet(self.start_et, frame_delay, n, c, framei))
+                self.framelets.append(Framelet(self.start_et, self.frame_delay, n, c, framei))
 
         self.fullimg = np.concatenate([frame.rawimg for frame in self.framelets], axis=0)
+
+    @classmethod
+    def from_file(cls, start_et: float, sclat: float, sclon: float, frame_delay: float, exposure: float,
+                  rawimg: np.ndarray, latitude: np.ndarray, longitude: np.ndarray, incidence: np.ndarray, emission: np.ndarray,
+                  fluxcal: np.ndarray, coords: np.ndarray):
+        ''' Load the frame data from input array
+
+        :param start_et: the start of the observation in spacecraft ET
+        :param sclat: the sub-spacecraft latitude
+        :param sclon: the sub-spacecraft longitude
+        :param frame_delay: the inter-frame delay in seconds
+        :param exposure: the exposure time in seconds
+        :param rawimg: the raw, decompanded image (shape: nframes, 3, 1648, 128)
+        :param latitude: the planetographic latitude for each pixel (degrees, shape: nframes, 3, 1648, 128)
+        :param longitude: the Sys III longitude for each pixel (degrees, shape: nframes, 3, 1648, 128)
+        :param incidence: the solar incidence angle (radians, shape: nframes, 3, 1648, 128)
+        :param emission: the surface emission angle wrt the spacecraft (radians, shape: nframes, 3, 1648, 128)
+        :param fluxcal: the geometric calibration for the flux for each pixel (radians, shape: nframes, 3, 1648, 128)
+        :param coords: the coordinate of the pixel in the mid-plane frame (radians, shape: nframes, 3, 1648, 128, 2)
+        '''
+        self = cls.__new__(cls)
+
+        self.start_et = start_et
+        self.frame_delay = frame_delay
+        self.sclat = sclat
+        self.sclon = sclon
+        self.exposure = exposure
+
+        self.nframes = rawimg.shape[0]
+
+        self.load_flatfield()
+
+        self.framelets = []
+        for n in range(self.nframes):
+            for c in range(3):
+                framelet = Framelet(self.start_et, self.frame_delay, n, c, rawimg[n, c])
+
+                framelet.lat = latitude[n, c]
+                framelet.lon = longitude[n, c]
+                framelet.incidence = incidence[n, c]
+                framelet.emission = emission[n, c]
+                framelet.fluxcal = fluxcal[n, c]
+                framelet.coords = coords[n, c]
+                framelet.image = rawimg[n, c] / fluxcal[n, c]
+                self.framelets.append(framelet)
+
+        return self
+
+    def load_flatfield(self):
+        # flatfield and gain from Brian Swift's GitHub
+        # (https://github.com/BrianSwift/JunoCam/tree/master/Juno3D)
+        self.flatfield = np.array(
+            io.imread(
+                os.path.dirname(__file__) + "/cal/flatFieldsSmooth12to16.tiff"
+            )
+        )
+        self.flatfield[self.flatfield == 0] = 1.0
 
     def get_backplane(self, num_procs: int) -> None:
         """Retrieve backplane information for all framelets (i.e., get pixel coordinates in the mid-plane frame and also incidence/emission angles)
@@ -108,6 +158,11 @@ class FrameletData:
     def tmid(self) -> float:
         """The mid-plane clock time"""
         return np.mean([frame.et for frame in self.framelets])
+
+    @property
+    def rawimage(self) -> np.ndarray:
+        """The raw, decompanded image in all the framelets"""
+        return np.stack([frame.rawimg for frame in self.framelets], axis=0).reshape((self.nframes, 3, FRAME_HEIGHT, FRAME_WIDTH))
 
     @property
     def image(self) -> np.ndarray:
