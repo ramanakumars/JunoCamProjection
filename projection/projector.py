@@ -376,11 +376,12 @@ def apply_lommel_seeliger(imgvals: np.ndarray, incidence: np.ndarray, emission: 
     corr = 1. / (mu + mu0)
     corr[np.abs(incidence) > np.radians(89)] = np.nan
     imgvals = imgvals * corr
+    imgvals[~np.isfinite(imgvals)] = 0.
 
     return imgvals
 
 
-def apply_minnaert(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray, k: float = 1.05) -> np.ndarray:
+def apply_minnaert(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray, k: float = 1.05, trim=-8) -> np.ndarray:
     """Apply the Minnaert illumination correction
 
     :param imgvals: the raw image values
@@ -395,8 +396,9 @@ def apply_minnaert(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndar
     mu = np.cos(emission)
     corr = (mu ** k) * (mu0 ** (k - 1))
     # log(mu * mu0) < -4 is usually pretty noisy
-    corr[np.log(np.cos(incidence) * np.cos(emission)) < -4] = np.inf
+    corr[np.log(np.cos(incidence) * np.cos(emission)) < trim] = np.inf
     imgvals = imgvals / corr
+    imgvals[~np.isfinite(imgvals)] = 0.
 
     return imgvals
 
