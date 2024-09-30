@@ -332,13 +332,13 @@ class Projector:
             outdata.createDimension('height', 128)
             outdata.createDimension('xy', 2)
 
-            latitude = outdata.createVariable('latitude', 'float64', ('frames', 'colors', 'height', 'width'))
-            longitude = outdata.createVariable('longitude', 'float64', ('frames', 'colors', 'height', 'width'))
-            incidence = outdata.createVariable('incidence', 'float64', ('frames', 'colors', 'height', 'width'))
-            emission = outdata.createVariable('emission', 'float64', ('frames', 'colors', 'height', 'width'))
-            image = outdata.createVariable('rawimage', 'float64', ('frames', 'colors', 'height', 'width'))
-            fluxcal = outdata.createVariable('fluxcal', 'float64', ('frames', 'colors', 'height', 'width'))
-            coords = outdata.createVariable('coords', 'float64', ('frames', 'colors', 'height', 'width', 'xy'))
+            latitude = outdata.createVariable('latitude', 'float32', ('frames', 'colors', 'height', 'width'))
+            longitude = outdata.createVariable('longitude', 'float32', ('frames', 'colors', 'height', 'width'))
+            incidence = outdata.createVariable('incidence', 'float32', ('frames', 'colors', 'height', 'width'))
+            emission = outdata.createVariable('emission', 'float32', ('frames', 'colors', 'height', 'width'))
+            image = outdata.createVariable('rawimage', 'float32', ('frames', 'colors', 'height', 'width'))
+            fluxcal = outdata.createVariable('fluxcal', 'float32', ('frames', 'colors', 'height', 'width'))
+            coords = outdata.createVariable('coords', 'float32', ('frames', 'colors', 'height', 'width', 'xy'))
 
             outdata.id = self.fname
             outdata.start_utc = self.start_utc
@@ -350,14 +350,14 @@ class Projector:
             outdata.exposure = self.framedata.exposure
 
             rawimg = np.stack([frame.rawimg for frame in self.framedata.framelets], axis=0).reshape((self.framedata.nframes, 3, 128, 1648))
-            fluxcal = np.stack([frame.fluxcal for frame in self.framedata.framelets], axis=0).reshape((self.framedata.nframes, 3, 128, 1648))
+            fcal = np.stack([frame.fluxcal for frame in self.framedata.framelets], axis=0).reshape((self.framedata.nframes, 3, 128, 1648))
 
             latitude[:] = self.framedata.latitude[:]
             longitude[:] = self.framedata.longitude[:]
             incidence[:] = self.framedata.incidence[:]
             emission[:] = self.framedata.emission[:]
             image[:] = rawimg[:]
-            fluxcal[:] = fluxcal[:]
+            fluxcal[:] = fcal[:]
             coords[:] = self.framedata.coords[:]
 
 
@@ -374,7 +374,7 @@ def apply_lommel_seeliger(imgvals: np.ndarray, incidence: np.ndarray, emission: 
     mu0 = np.cos(incidence)
     mu = np.cos(emission)
     corr = 1. / (mu + mu0)
-    corr[np.abs(incidence) > np.radians(89)] = np.nan
+    corr[np.abs(incidence) > np.radians(89.99)] = np.nan
     imgvals = imgvals * corr
     imgvals[~np.isfinite(imgvals)] = 0.
 
