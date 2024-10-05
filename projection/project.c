@@ -17,6 +17,7 @@ double aperture = 1.;
  */
 double pixel_size = 7.4e-6;
 double focal_length = 0.001095637;
+double c = 3e5; // light speed in km/s
 
 struct Camera
 {
@@ -128,10 +129,10 @@ void furnish(char *file) { furnsh_c(file); }
 void process(double eti, int cam, double cam2jup[3][3], double *lon, double *lat,
              double *inclin, double *emis, double *fluxcal)
 {
-  double pix[2], spoint[3], srfvec[3], pixvec[3], pos_jup[3], scloc[3];
+  double pix[2], spoint[3], srfvec[3], pixvec[3], pos_jup[3], scloc[3], radii[3];
   double disti, loni, lati, phase, inc, emission, trgepoch, lt, plate_scale,
-      ang_size, footprint;
-  int found;
+      ang_size, footprint, f;
+  int found, n;
 
   plate_scale = (1. / focal_length) / (pixel_size);
 
@@ -140,6 +141,7 @@ void process(double eti, int cam, double cam2jup[3][3], double *lon, double *lat
   initialize_camera(&camera, cam);
 
   spkpos_c("JUNO", eti, "IAU_JUPITER", "CN+S", "JUPITER", scloc, &lt);
+
 
   for (int jj = 0; jj < FRAME_HEIGHT; jj++)
   {
@@ -206,10 +208,10 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
                       double *lat, double *incid, double *emis, double *coords,
                       double *fluxcal)
 {
-  double pix[2], pix_transformed[2], spoint[3], srfvec[3], pixvec[3], scloc[3],
-      vec_transformed[3], vec_iau[3], pxfrm_mid[3][3], pxfrm_iau[3][3], disti,
-      loni, lati, phase, inc, emission, trgepoch, lt, plate_scale, cosalpha;
-  int found;
+  double pix[2], pix_transformed[2], spoint[3], srfvec[3], pixvec[3], scloc[3], radii[3],
+      vec_transformed[3], vec_iau[3], pxfrm_mid[3][3], pxfrm_iau[3][3], alti,
+      loni, lati, phase, inc, emission, trgepoch, lt, plate_scale, cosalpha, f;
+  int found, n;
 
   struct Camera camera, cam0;
   initialize_camera(&camera, cam);
@@ -220,6 +222,10 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
   pxfrm2_c("JUNO_JUNOCAM", "JUNO_JUNOCAM", eti, tmid, pxfrm_mid);
 
   pxform_c("JUNO_JUNOCAM", "IAU_JUPITER", eti, pxfrm_iau);
+  
+  bodvrd_c("JUPITER", "RADII", 3, &n, radii);
+
+  f = (radii[0] - radii[2]) / radii[0];
 
   for (int jj = 0; jj < FRAME_HEIGHT; jj++)
   {
@@ -238,7 +244,7 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
       if (found)
       {
         // find the coordinate of the surface point
-        reclat_c(spoint, &disti, &loni, &lati);
+        recpgr_c("JUPITER", spoint, radii[0], f, &loni, &lati, &alti);
 
         // calculate the illumination angle to do
         // solar flux correction
@@ -271,8 +277,9 @@ void project_midplane(double eti, int cam, double tmid, double *lon,
 void get_pixel_from_coords(double *lon, double *lat, int npoints, double et,
                            double *extents, double *pix)
 {
-  double scloc[3], spoint[3], dvec[3], dvec_jcam[3], pixi[2], lt,
-      pxfrm[3][3], x0, x1, y0, y1, percentage;
+  double scloc[3], spoint[3], dvec[3], spoint_et[3], dvec_jcam[3], pixi[2], lt,
+      pxfrm[3][3], pxfrm_et[3][3], x0, x1, y0, y1, percentage, radii[3], f, dist, et2;
+  int n;
   struct Camera cam0;
   initialize_camera(&cam0, 1);
 
@@ -280,6 +287,10 @@ void get_pixel_from_coords(double *lon, double *lat, int npoints, double et,
   x1 = extents[1];
   y0 = extents[2];
   y1 = extents[3];
+  
+  bodvrd_c("JUPITER", "RADII", 3, &n, radii);
+
+  f = (radii[0] - radii[2]) / radii[0];
 
   spkpos_c("JUNO", et, "IAU_JUPITER", "CN+S", "JUPITER", scloc, &lt);
   pxform_c("IAU_JUPITER", "JUNO_JUNOCAM", et, pxfrm);
@@ -289,9 +300,8 @@ void get_pixel_from_coords(double *lon, double *lat, int npoints, double et,
     double lati, loni;
     lati = lat[i];
     loni = lon[i];
-    srfrec_c(JUPITER, loni, lati, spoint);
+    pgrrec_c("JUPITER", loni, lati, 0, radii[0], f, spoint);
     subtract3D(spoint, scloc, dvec);
-
     matmul3D(pxfrm, dvec, dvec_jcam);
     vec2pix(&cam0, dvec_jcam, pixi);
 

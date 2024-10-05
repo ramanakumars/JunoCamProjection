@@ -11,7 +11,18 @@ from .cython_utils import furnish_c, get_pixel_from_coords_c
 from .camera_funcs import CameraModel
 from .spice_utils import get_kernels
 from .frameletdata import FrameletData
+from .spatial import SpatialData
 import healpy as hp
+from pyproj import crs
+from pyproj.transformer import Transformer
+
+# define the ellipsoid and datum for Jupiter
+jupiter = crs.datum.CustomEllipsoid('Jupiter', semi_major_axis=71492e3, semi_minor_axis=66854e3)
+primem = crs.datum.CustomPrimeMeridian(longitude=0, name='Jupiter Prime Meridian')
+jupiter_datum = crs.datum.CustomDatum('Jupiter', ellipsoid=jupiter, prime_meridian=primem)
+
+# this is the base cylindrical projection for Jupiter
+jupiter_crs = crs.GeographicCRS('Jupiter', datum=jupiter_datum)
 
 
 class Projector:
@@ -295,6 +306,68 @@ class Projector:
 
         return m
 
+    def project_to_laea(self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
+        '''
+        Convert the image to a Lambert Azimuthal Equal Area projection centered at the sub-spacecraft location.
+        Note that we have to convert to a positive-east Sys III longitude so that PROJ does the right calculations
+
+        :param resolution: the resolution of the final image in km/pixel
+        :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
+        :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
+
+        :returns: the image in LAEA projection (shape: ny, nx, 3)
+        '''
+        # project with the sub-spacecraft location directly at the center
+        latitude = self.framedata.sclat
+        longitude = self.framedata.sclon
+
+        # get the coordinate transformation from Cylindrical -> LAEA
+        laea = crs.coordinate_operation.LambertAzimuthalEqualAreaConversion(latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude)
+        jupiter_laea = crs.ProjectedCRS(laea, 'Jupiter LAEA', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
+        transformer = Transformer.from_crs(jupiter_crs, jupiter_laea)
+        inv_transformer = Transformer.from_crs(jupiter_laea, jupiter_crs)
+
+        # find the locations in the image where we have valid data
+        mask = np.isfinite(self.framedata.longitude)
+        xx = np.zeros_like(self.framedata.longitude)
+        yy = np.zeros_like(xx)
+
+        # and calculate the distance between those points and the center of the image
+        xx[mask], yy[mask] = transformer.transform(360 - self.framedata.longitude[mask], self.framedata.latitude[mask])
+
+        # get the new camera grid with the given resolution
+        # we are essentially constructing a field in LAEA projection
+        xx_grid = np.arange(np.nanmin(xx), np.nanmax(xx), resolution * 1e3)
+        yy_grid = np.arange(np.nanmin(yy), np.nanmax(yy), resolution * 1e3)
+
+        XX, YY = np.meshgrid(xx_grid, yy_grid)
+
+        # get the corresponding lat/lon grid for the image
+        lon_grid, lat_grid = inv_transformer.transform(XX.flatten(), YY.flatten())
+
+        # get the image extents in pixel coordinate space
+        # clip half a pixel to avoid edge artifacts
+        x0 = np.nanmin(self.framecoords[:, :, 0]) + 0.5
+        x1 = np.nanmax(self.framecoords[:, :, 0]) - 0.5
+        y0 = np.nanmin(self.framecoords[:, :, 1]) + 0.5
+        y1 = np.nanmax(self.framecoords[:, :, 1]) - 0.5
+
+        extents = np.array([x0, x1, y0, y1])
+        pix = np.nan * np.zeros((lon_grid.size, 2))
+        et = self.framedata.tmid
+
+        # get the locations on the image where we have data
+        get_pixel_from_coords_c(np.radians(360 - lon_grid.flatten()), np.radians(lat_grid.flatten()), lon_grid.size, et, extents, pix)
+
+        inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
+        pix_masked = pix[inds]
+        pixel_inds = np.asarray(range(lon_grid.size))[inds]
+
+        mapi = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix_masked, lon_grid.shape, n_neighbor=n_neighbor, max_dist=max_dist)
+
+        # finally, reshape into the 2D array and return it
+        return SpatialData(self.fname, mapi.reshape((yy_grid.size, xx_grid.size, 3)), jupiter_laea, xx_grid, yy_grid)
+
     @classmethod
     def load(cls, infile: str, kerneldir: str = './'):
         '''Load the object from a netCDF file
@@ -312,10 +385,11 @@ class Projector:
             self.start_utc = indata.start_utc
             self.load_kernels(kerneldir)
 
-            self.framedata = FrameletData.from_file(indata.start_et, indata.sub_lon, indata.sub_lat, indata.frame_delay, indata.exposure,
+            self.framedata = FrameletData.from_file(indata.start_et, indata.sub_lat, indata.sub_lon, indata.frame_delay, indata.exposure,
                                                     indata.variables['rawimage'][:], indata.variables['latitude'][:], indata.variables['longitude'][:],
                                                     indata.variables['incidence'][:], indata.variables['emission'][:],
                                                     indata.variables['fluxcal'][:], indata.variables['coords'][:])
+            self.jitter = indata.jitter
             self.framedata.update_jitter(indata.jitter)
 
         return self
@@ -374,7 +448,7 @@ def apply_lommel_seeliger(imgvals: np.ndarray, incidence: np.ndarray, emission: 
     mu0 = np.cos(incidence)
     mu = np.cos(emission)
     corr = 1. / (mu + mu0)
-    corr[np.abs(incidence) > np.radians(89.99)] = np.nan
+    corr[np.abs(incidence) > np.radians(89.9)] = np.nan
     imgvals = imgvals * corr
     imgvals[~np.isfinite(imgvals)] = 0.
 
