@@ -1,53 +1,72 @@
 import numpy as np
-import healpy as hp
-from skimage import color
+from scipy.ndimage import gaussian_filter
 import tqdm
 
 
-class Mosaic:
-    def __init__(self, fnames, n_side=512):
-        self.fnames = fnames
-        self.nframes = len(fnames)
-        self.n_side = n_side
+def blend_maps(maps: np.ndarray, blur_sigma: float = 50, trim_threshold: float = 0.25) -> np.ndarray:
+    '''
+    Blend a series of projected maps (all on the same coordinate system) together to reduce seams
 
-    def load_data(self):
-        self.maps = np.zeros((len(self.fnames), hp.nside2npix(self.n_side), 3))
+    :param maps: A numpy array containing each individual JunoCam image projected on the same coordinate system
+    :param blur_sigma: the Gaussian blur radius in pixels for removing large-scale luminance gradient (should be larger than the largest scale feature that needs to be resolved)
+    :param trim_threshold: the standard deviation threshold above which to trim pixels. This is useful for reducing color noise. A large threshold will account for pixels where one color dominates over the others, e.g., when one filter is saturated)
 
-        for i, fname in enumerate(tqdm.tqdm(self.fnames)):
-            map = np.load(fname)
-            if hp.nside2npix(self.n_side) != map.shape[0]:
-                map = hp.ud_grade(map.T, self.n_side).T
+    :return: the blended image in the same size as the original set of images
+    '''
 
-            map_lab = color.rgb2lab(map)
+    # open the file and load the variables
+    nfiles, ny, nx, _ = maps.shape
+    filtered = np.zeros_like(maps, dtype=np.float32)
 
-            # clean up the fringes. these are negative a* and b* in the CIELAB space
-            map_lab[(map_lab[:, 1] < -0.001) | (map_lab[:, 2] < -0.001), 0] = 0
+    for i in tqdm.tqdm(range(nfiles), desc='Applying filter'):
+        mapi = maps[i]
+        Ls = mapi.mean(-1)
 
-            self.maps[i, :] = color.lab2rgb(map_lab)
-        self.maps[~np.isfinite(self.maps)] = 0.
+        # find the image footprint for each map
+        footprint = np.asarray(Ls > np.percentile(Ls, 1), dtype=np.float32)
 
-    def stack(self, radius=2):
-        m_normed = self.maps.copy()
-        # first, norma
-        for j in range(self.nframes):
-            m_normed[j, :] = m_normed[j, :] / np.percentile(m_normed[j, :], 99)
+        # we will blur this so we can trim the edges after we apply the high-pass filter
+        footprint = np.repeat(gaussian_filter(footprint, sigma=blur_sigma, mode=['nearest', 'wrap'])[:, :, np.newaxis], 3, axis=-1)
+        footprint[footprint < 0.8] = 0
+        footprint[footprint >= 0.8] = 1
 
-        count = np.sum(np.min(m_normed, axis=-1) > 1.e-6, axis=0)
-        m_hsv = color.rgb2hsv(m_normed)
-        v_ave = np.mean(m_hsv[:, count > 0, 2])
+        # get the low frequency luminance gradient by applying a Gaussian blur on the luminance
+        low_freq = np.repeat(gaussian_filter(Ls, sigma=blur_sigma, mode=['nearest', 'wrap'])[:, :, np.newaxis], 3, axis=-1)
 
-        pix_inds = np.where(count > 0)[0]
-        v_loc = np.zeros_like(m_normed[:, :, 0])
-        vecs = np.asarray(hp.pix2vec(self.n_side, ipix=pix_inds)).T
+        # the filtered image is divided by the low frequency data (i.e., retains high frequency info)
+        filtered[i] = mapi / (low_freq + 1e-6) * footprint
 
-        for i, vec in tqdm.tqdm(zip(pix_inds, vecs), total=len(pix_inds)):
-            neighbours = hp.query_disc(self.n_side, vec=vec, radius=np.radians(radius))
-            m_hsv_neigh = m_hsv[:, neighbours, 2]
-            v_loc[:, i] = np.mean(m_hsv_neigh[:, count[neighbours] > 0], axis=1)
+        # flatten the image histogram
+        filtered[i] = filtered[i] / np.percentile(filtered[i][filtered[i] > 0], 99)
 
-        m_new = np.zeros_like(m_normed[0, :])
-        for i in range(3):
-            m_new[:, i] = np.sum(m_normed[:, :, i] * (v_ave / v_loc), axis=0) / count
-        m_new[~np.isfinite(m_new)] = 0
+    filtered_Ls = filtered.mean(-1)
 
-        return m_new
+    IMG = np.zeros((ny, nx, 3))
+    alpha = np.zeros_like(filtered[:, :, :, 0])
+    cut_threshold = np.nanpercentile(filtered_Ls[filtered_Ls > 0.0].flatten(), 1)
+
+    for kk in range(nfiles):
+        # find the standard deviation in the image axes, and cut off pixels which are above the
+        # trim threshold for color variance
+        std = np.nanstd(filtered[kk], axis=(-1))
+        mask_k = (filtered_Ls[kk] > cut_threshold) & (std / filtered_Ls[kk] < trim_threshold)
+        # weight each image by its relative brightness wrt to the global mean
+        if len(filtered_Ls[kk, :, :][mask_k]) > 0:
+            alpha[kk][mask_k] = np.nanmean(filtered_Ls[kk, :, :][mask_k])
+            alpha[kk][alpha[kk, :] != 0] = 1. / alpha[kk, :][alpha[kk, :] != 0.]
+
+    alpha_sum = np.sum(alpha, axis=0)
+    alpha_sum[alpha_sum == 0] = np.nan
+
+    IMGs_sub = filtered.copy()
+    for c in range(3):
+        IMGs_sub[:, :, :, c] = IMGs_sub[:, :, :, c] * alpha
+
+    # remove really dim pixels which can occur on the edges and will pull the median down
+    IMGs_sub[IMGs_sub <= np.percentile(filtered_Ls, 40)] = np.nan
+
+    IMG = np.nanmedian(IMGs_sub, axis=0)
+
+    IMG[~np.isfinite(IMG)] = 0.
+
+    return IMG
