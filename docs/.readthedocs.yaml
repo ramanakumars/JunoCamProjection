@@ -1,0 +1,11 @@
+version: 2
+python:
+  install:
+    - requirements: docs/requirements.txt
+build:
+  os: "ubuntu-lts-latest"
+  tools:
+    python: "3.10"
+  jobs:
+    pre_build:
+      - cd projection && make clean && make && cd ..
