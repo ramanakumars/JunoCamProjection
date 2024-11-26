@@ -13,3 +13,4 @@ sphinx-rtd-theme
 ipykernel
 lxml_html_clean
 myst-parser
+netCDF4
