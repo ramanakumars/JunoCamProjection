@@ -4,11 +4,19 @@
 
 This is a tool to process and project JunoCam images onto a lat/lon grid. 
 
+> [!NOTE]
+> This program will only work on Linux x64
+
 ## Dependencies
-Install the python dependencies using the `requirements.txt`:
+Install `uv` to linux machine
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Install the python dependencies using the `uv`:
 
 ```bash
-pip3 install -r requirements.txt
+uv sync
 ```
 
 ## Installation
