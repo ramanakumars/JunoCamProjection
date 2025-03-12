@@ -135,5 +135,8 @@ dmypy.json
 # Kernels
 kernels/
 
+examples/DataSet/*
+examples/ImageSet/*
+
 # docs
 docs/build/
