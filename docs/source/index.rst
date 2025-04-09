@@ -19,5 +19,5 @@ a walkthrough on the projection pipeline.
 
    Projecting a JunoCam Image <notebooks/projection.ipynb>
    Mosaicing multiple JunoCam Images <notebooks/mosaic.ipynb>
-   Projection module <projection.rst>
+   Projection module <junocam_projection.rst>
    README <readme_link.rst>

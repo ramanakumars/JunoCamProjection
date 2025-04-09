@@ -4,4 +4,4 @@ JunoCamProjection
 .. toctree::
    :maxdepth: 4
 
-   projection
+   junocam_projection
