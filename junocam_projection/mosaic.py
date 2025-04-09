@@ -1,4 +1,5 @@
 import numpy as np
+import tqdm
 from scipy.ndimage import gaussian_filter
 
 
@@ -87,6 +88,7 @@ def blend_maps(maps: np.ndarray, sigma_filter: float = 40, sigma_cut: float = 50
     # open the file and load the variables
     nfiles, nlat, nlon, _ = maps.shape
 
+    print("Creating initial mosaic")
     mosaic_initial = mosaic_median(maps)
 
     # apply a low pass on the initial mosaic
@@ -97,7 +99,7 @@ def blend_maps(maps: np.ndarray, sigma_filter: float = 40, sigma_cut: float = 50
     # then high-pass filter the maps
     highpass_data = np.zeros_like(maps, dtype=np.float32)
     footprint = np.zeros((nlat, nlon))
-    for i, mapi in enumerate(maps):
+    for i, mapi in enumerate(tqdm.tqdm(maps, desc="Applying high-pass filter")):
         highpass_data[i], footprinti = highpass(mapi, sigma_cut, sigma_filter)
         footprint += footprinti.mean(-1)
 
@@ -107,6 +109,7 @@ def blend_maps(maps: np.ndarray, sigma_filter: float = 40, sigma_cut: float = 50
     footprint = np.clip(footprint, 0, 1)
 
     # create a mosaic using the high-pass data
+    print("Creating high-pass mosaic")
     mosaic_highpass = mosaic_median(highpass_data)
 
     # the final mosaic is the combination of the low-pass mosaic and the high-pass mosaic

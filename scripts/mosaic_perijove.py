@@ -2,6 +2,7 @@ from junocam_projection.mosaic import blend_maps
 import numpy as np
 import glob
 import os
+import tqdm
 import argparse
 import logging
 
@@ -23,9 +24,9 @@ logger.info(f"Found {len(files)} files")
 
 maps = []
 
-for file in files:
+for file in tqdm.tqdm(files, desc='Loading files', dynamic_ncols=True):
     maps.append(np.load(file))
 
-mosaic = blend_maps(maps, args.sigma_filter, args.sigma_cut)
+mosaic = blend_maps(np.asarray(maps), args.sigma_filter, args.sigma_cut)
 
 np.save(args.output, mosaic)
