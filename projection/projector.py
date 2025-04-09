@@ -45,13 +45,14 @@ class Projector:
 
         self.find_jitter(jitter_max=120)
 
-    def load_kernels(self, KERNEL_DATAFOLDER: str) -> None:
+    def load_kernels(self, KERNEL_DATAFOLDER: str, offline: bool = False) -> None:
         """Get the kernels for the current spacecraft time and load them
 
         :param KERNEL_DATAFOLDER: path to the folder where kernels are stored
+        :param offline: use the kernels stored locally (saves time by not scraping the NAIF servers)
         """
         self.kernels = []
-        kernels = get_kernels(KERNEL_DATAFOLDER, self.start_utc)
+        kernels = get_kernels(KERNEL_DATAFOLDER, self.start_utc, offline)
         for kernel in kernels:
             furnish_c(kernel.encode("ascii"))
             spice.furnsh(kernel)
@@ -426,12 +427,47 @@ class Projector:
 
         return self.project_to_pyproj(jupiter_cyl, resolution, n_neighbor, max_dist)
 
+    def project_to_cylindrical_fullglobe(self, resolution: float = 50, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
+        # get the coordinate transformation from Cylindrical -> TMerc
+        eqcyl = crs.coordinate_operation.EquidistantCylindricalConversion()
+        projection = crs.ProjectedCRS(eqcyl, 'Jupiter Cylindrical', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
+
+        # get the corresponding lat/lon grid for the image
+        lon_grid = np.linspace(0, 360, resolution * 360 + 1, endpoint=True)
+        lat_grid = np.linspace(-90, 90, resolution * 180 + 1, endpoint=True)
+
+        LON, LAT = np.meshgrid(lon_grid, lat_grid)
+
+        # get the image extents in pixel coordinate space
+        # clip half a pixel to avoid edge artifacts
+        x0 = np.nanmin(self.framecoords[:, :, 0]) + 0.5
+        x1 = np.nanmax(self.framecoords[:, :, 0]) - 0.5
+        y0 = np.nanmin(self.framecoords[:, :, 1]) + 0.5
+        y1 = np.nanmax(self.framecoords[:, :, 1]) - 0.5
+
+        extents = np.array([x0, x1, y0, y1])
+        pix = np.nan * np.zeros((LON.size, 2))
+        et = self.framedata.tmid
+
+        # get the locations on the image where we have data
+        get_pixel_from_coords_c(np.radians(360 - LON.flatten()), np.radians(LAT.flatten()), LON.size, et, extents, pix)
+
+        inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
+        pix_masked = pix[inds]
+        pixel_inds = np.asarray(range(LON.size))[inds]
+
+        mapi = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix_masked, LON.shape, n_neighbor=n_neighbor, max_dist=max_dist)
+
+        # finally, reshape into the 2D array and return it
+        return SpatialData(self.fname, mapi.reshape((lat_grid.size, lon_grid.size, 3)), projection, lon_grid, lat_grid, lon_grid, lat_grid)
+
     @classmethod
-    def load(cls, infile: str, kerneldir: str = './'):
+    def load(cls, infile: str, kerneldir: str = './', offline=False):
         '''Load the object from a netCDF file
 
         :param infile: path to the input .nc file
         :param kerneldir: Path to folder where SPICE kernels will be stored, defaults to "./"
+        :param offline: use the kernels stored locally (saves time by not scraping the NAIF servers)
 
         :return: the Projector object with the loaded data and backplane information
         '''
@@ -441,12 +477,12 @@ class Projector:
         with nc.Dataset(infile, 'r') as indata:
             self.fname = indata.id
             self.start_utc = indata.start_utc
-            self.load_kernels(kerneldir)
+            self.load_kernels(kerneldir, offline)
 
             self.framedata = FrameletData.from_file(indata.start_et, indata.sub_lat, indata.sub_lon, indata.frame_delay, indata.exposure,
-                                                    indata.variables['rawimage'][:], indata.variables['latitude'][:], indata.variables['longitude'][:],
-                                                    indata.variables['incidence'][:], indata.variables['emission'][:],
-                                                    indata.variables['fluxcal'][:], indata.variables['coords'][:])
+                                                    indata.variables['rawimage'][:].astype(float), indata.variables['latitude'][:].astype(float), indata.variables['longitude'][:].astype(float),
+                                                    indata.variables['incidence'][:].astype(float), indata.variables['emission'][:].astype(float),
+                                                    indata.variables['fluxcal'][:].astype(float), indata.variables['coords'][:].astype(float))
             self.jitter = indata.jitter
             self.framedata.update_jitter(indata.jitter)
 
