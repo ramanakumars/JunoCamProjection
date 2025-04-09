@@ -12,7 +12,6 @@ from .camera_funcs import CameraModel
 from .spice_utils import get_kernels
 from .frameletdata import FrameletData
 from .spatial import SpatialData, jupiter_crs
-import healpy as hp
 from pyproj import crs
 from pyproj.transformer import Transformer
 
@@ -23,7 +22,7 @@ class Projector:
     of each pixel in a JunoCam image
     """
 
-    def __init__(self, imagefolder: str, meta: str, kerneldir: str = "./kernels/"):
+    def __init__(self, imagefolder: str, meta: str, kerneldir: str = "./kernels/", find_jitter: bool = True):
         """Initializes the Projector
 
         :param imagefolder: Path to the folder containing the image files
@@ -43,7 +42,10 @@ class Projector:
 
         self.framedata = FrameletData(metadata, imagefolder)
 
-        self.find_jitter(jitter_max=120)
+        if find_jitter:
+            self.find_jitter(jitter_max=120)
+        else:
+            self.framedata.update_jitter(0)
 
     def load_kernels(self, KERNEL_DATAFOLDER: str, offline: bool = False) -> None:
         """Get the kernels for the current spacecraft time and load them
@@ -251,46 +253,6 @@ class Projector:
         """
         return np.transpose(self.framedata.image, (1, 0, 2, 3)).reshape(3, -1)
 
-    def project_to_healpix(self, nside: int, n_neighbor: int = 4, max_dist: int = 25) -> np.ndarray:
-        """Project the current image to a HEALPix map
-
-        :param nside: resolution of the HEALPix map. See https://healpy.readthedocs.io/en/latest/tutorial.html
-        :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
-        :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
-
-        :return: the HEALPix map of the projected image (shape: (npixels, 3), where npixels is the corresponding image size for a given n_side)
-        """
-        # get the image extents in pixel coordinate space
-        # clip half a pixel to avoid edge artifacts
-        x0 = np.nanmin(self.framecoords[:, :, 0]) + 0.5
-        x1 = np.nanmax(self.framecoords[:, :, 0]) - 0.5
-        y0 = np.nanmin(self.framecoords[:, :, 1]) + 0.5
-        y1 = np.nanmax(self.framecoords[:, :, 1]) - 0.5
-
-        extents = np.array([x0, x1, y0, y1])
-
-        # now we construct the map grid
-        longrid, latgrid = hp.pix2ang(nside, list(range(hp.nside2npix(nside))), lonlat=True)
-
-        pix = np.nan * np.zeros((longrid.size, 2))
-
-        # this assumes the midplane mode where the coordinates
-        # are using the Green band camera
-        et = self.framedata.tmid
-
-        # get the spacecraft location and transformation to and from the JUNOCAM coordinates
-        get_pixel_from_coords_c(np.radians(longrid), np.radians(latgrid), longrid.size, et, extents, pix)
-
-        # get the locations that JunoCam observed
-        inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
-        pix = pix[inds]
-        pixel_inds = hp.ang2pix(nside, longrid[inds], latgrid[inds], lonlat=True)
-
-        # finally, project the image onto the healpix grid
-        m = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix, longrid.shape, n_neighbor=n_neighbor, max_dist=max_dist)
-
-        return m
-
     def project_to_pyproj(self, projection: crs.coordinate_operation.CoordinateOperation, resolution: float = 50, n_neighbor: int = 10, max_dist: float = 25):
         '''
         Convert the image to an arbitrary PyProj projection
@@ -472,7 +434,7 @@ class Projector:
         :return: the Projector object with the loaded data and backplane information
         '''
 
-        self = cls.__new__(cls)
+        self = cls.__new__(cls, find_jitter=False)
 
         with nc.Dataset(infile, 'r') as indata:
             self.fname = indata.id
