@@ -1,6 +1,28 @@
 import numpy as np
 import tqdm
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import uniform_filter
+import numba
+
+
+@numba.jit(nopython=True, cache=True)
+def nanmedian_axis0(arr):
+    """Faster implementation of np.nanpercentile
+
+    This implementation always takes the percentile along axis 0.
+    Uses numba to speed up the calculation by more than 7x.
+
+    Function is equivalent to np.nanpercentile(arr, <percentiles>, axis=0)
+
+    :param arr: Array to calculate percentiles for
+
+    :return: Array with median data
+    """
+    shape = arr.shape
+    arr = arr.reshape((arr.shape[0], -1))
+    out = np.empty((arr.shape[1]))
+    for i in range(arr.shape[1]):
+        out[i] = np.nanmedian(arr[:, i])
+    return out.reshape(shape[1:])
 
 
 def mosaic_median(maps: np.ndarray) -> np.ndarray:
@@ -13,7 +35,7 @@ def mosaic_median(maps: np.ndarray) -> np.ndarray:
     """
     maps_clipped = maps.copy()
     maps_clipped[np.abs(maps) < np.percentile(maps[maps > 0], 1)] = np.nan
-    mosaic = np.nanmedian(maps_clipped, axis=0)
+    mosaic = nanmedian_axis0(maps_clipped)
     mosaic[~np.isfinite(mosaic)] = 0.
     return mosaic
 
@@ -27,7 +49,7 @@ def lowpass(data: np.ndarray, sigma: float):
 
     :return: low-pass filtered image (Gaussian blurred image)
     """
-    return gaussian_filter(data, sigma=sigma, mode=['nearest', 'wrap'])
+    return uniform_filter(data, size=sigma, mode=['nearest', 'wrap'])
 
 
 def highpass(mapi: np.ndarray, sigma_cut: float, sigma_filter: float):
@@ -62,7 +84,7 @@ def highpass(mapi: np.ndarray, sigma_cut: float, sigma_filter: float):
     # we filter the map on the low-frequency to get only the high-frequency components
     # and cut off the edges
     filtered = (mapi - low_freq) * footprint
-    # filtered = filtered / np.percentile(filtered[filtered > 0], 99)
+
     return filtered, footprint
 
 
@@ -80,9 +102,10 @@ def blend_maps(maps: np.ndarray, sigma_filter: float = 40, sigma_cut: float = 50
 
     # filter the input maps by truncating small values
     # and adjusting the input values to match each other
-    for i, mapi in enumerate(maps):
+    for i, mapi in enumerate(tqdm.tqdm(maps, desc="Trimming bad pixels")):
         mapi = mapi / np.median(mapi[mapi > 0])
         mapi[mapi < 1e-4] = 0.
+        mapi[~np.isfinite(mapi)] = 0.
         maps[i] = mapi
 
     # open the file and load the variables
