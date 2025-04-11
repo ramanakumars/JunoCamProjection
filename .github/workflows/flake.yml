@@ -24,4 +24,4 @@ jobs:
         pip install flake8
     - name: Run flake
       run: |
-        flake8 projection --ignore=E501,W503,W504
+        flake8 junocam_projection --ignore=E501,W503,W504

@@ -1,4 +1,6 @@
 version: 2
+sphinx:
+  configuration: docs/source/conf.py
 python:
   install:
     - requirements: docs/requirements.txt
@@ -8,4 +10,4 @@ build:
     python: "3.10"
   jobs:
     pre_build:
-      - cd projection && make clean && make && cd ..
+      - cd junocam_projection && make clean && make && cd ..

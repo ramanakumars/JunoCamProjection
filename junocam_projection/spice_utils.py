@@ -1,4 +1,5 @@
 import os
+import glob
 from bs4 import BeautifulSoup
 import requests
 import re
@@ -19,7 +20,20 @@ def fetch_kernels_from_https(path: str, pattern: str) -> list[str]:
     with requests.get(path) as response:
         soup = BeautifulSoup(response.text, 'html.parser')
     kernels_all = [a['href'] for a in soup.find('pre').find_all('a')]
-    return fnmatch.filter(kernels_all, pattern)
+    files = fnmatch.filter(kernels_all, pattern)
+    basefolder = os.path.split(os.path.normpath(path))[-1]
+    return [os.path.join(basefolder, file) for file in files]
+
+
+def fetch_kernels_from_disk(path: str, pattern: str) -> list[str]:
+    """Fetch kernels from local path matching a given pattern
+
+    :param path: path to the folder at which to search for kernels
+    :param pattern: file-name pattern to search for relevant links
+
+    :return: list of files that match the given pattern
+    """
+    return [file.replace(path, "") for file in sorted(glob.glob(os.path.join(path, pattern)))]
 
 
 def check_and_download_kernels(kernels: list[str], KERNEL_DATAFOLDER: str) -> list[str]:
@@ -62,11 +76,12 @@ def download_kernel(kernel: str, KERNEL_DATAFOLDER: str) -> None:
                     pbar.update(len(data))
 
 
-def get_kernels(KERNEL_DATAFOLDER: str, start_utc: float) -> list[str]:
+def get_kernels(KERNEL_DATAFOLDER: str, start_utc: float, offline: bool = False) -> list[str]:
     """Fetch all relevant kernels for JunoCam at a given time
 
     :param KERNEL_DATAFOLDER: path to the local kernel directory to store downloaded kernels
     :param start_utc: the spacecraft clock time in start_utc
+    :param offline: use the kernels stored locally (saves time by not scraping the NAIF servers)
 
     :return: list of local paths to the kernels
     """
@@ -77,16 +92,30 @@ def get_kernels(KERNEL_DATAFOLDER: str, start_utc: float) -> list[str]:
         if not os.path.exists(os.path.join(KERNEL_DATAFOLDER, folder)):
             os.mkdir(os.path.join(KERNEL_DATAFOLDER, folder))
 
-    iks = fetch_kernels_from_https(BASEURL + "ik/", "juno_junocam_v*.ti")
-    cks = fetch_kernels_from_https(BASEURL + "ck/", "juno_sc_*.bc")
-    spks1 = fetch_kernels_from_https(BASEURL + "spk/", "spk_*.bsp")
-    spks2 = fetch_kernels_from_https(BASEURL + "spk/", "jup*.bsp")
-    spks3 = fetch_kernels_from_https(BASEURL + "spk/", "de*.bsp")
-    spks4 = fetch_kernels_from_https(BASEURL + "spk/", "juno_struct*.bsp")
-    pcks = fetch_kernels_from_https(BASEURL + "pck/", "pck*.tpc")
-    fks = fetch_kernels_from_https(BASEURL + "fk/", "juno_v*.tf")
-    sclks = fetch_kernels_from_https(BASEURL + "sclk/", "JNO_SCLKSCET.*.tsc")
-    lsks = fetch_kernels_from_https(BASEURL + "lsk/", "naif*.tls")
+    if offline:
+        print("Fetching kernels from disk")
+        iks = fetch_kernels_from_disk(KERNEL_DATAFOLDER, "ik/juno_junocam_v*.ti")
+        cks = fetch_kernels_from_disk(KERNEL_DATAFOLDER, "ck/juno_sc_*.bc")
+        spks1 = fetch_kernels_from_disk(KERNEL_DATAFOLDER, "spk/spk_*.bsp")
+        spks2 = fetch_kernels_from_disk(KERNEL_DATAFOLDER, "spk/jup*.bsp")
+        spks3 = fetch_kernels_from_disk(KERNEL_DATAFOLDER, "spk/de*.bsp")
+        spks4 = fetch_kernels_from_disk(KERNEL_DATAFOLDER, "spk/juno_struct*.bsp")
+        pcks = fetch_kernels_from_disk(KERNEL_DATAFOLDER, "pck/pck*.tpc")
+        fks = fetch_kernels_from_disk(KERNEL_DATAFOLDER, "fk/juno_v*.tf")
+        sclks = fetch_kernels_from_disk(KERNEL_DATAFOLDER, "sclk/JNO_SCLKSCET.*.tsc")
+        lsks = fetch_kernels_from_disk(KERNEL_DATAFOLDER, "lsk/naif*.tls")
+    else:
+        print("Fetching kernels from NAIF server")
+        iks = fetch_kernels_from_https(BASEURL + "ik/", "juno_junocam_v*.ti")
+        cks = fetch_kernels_from_https(BASEURL + "ck/", "juno_sc_*.bc")
+        spks1 = fetch_kernels_from_https(BASEURL + "spk/", "spk_*.bsp")
+        spks2 = fetch_kernels_from_https(BASEURL + "spk/", "jup*.bsp")
+        spks3 = fetch_kernels_from_https(BASEURL + "spk/", "de*.bsp")
+        spks4 = fetch_kernels_from_https(BASEURL + "spk/", "juno_struct*.bsp")
+        pcks = fetch_kernels_from_https(BASEURL + "pck/", "pck*.tpc")
+        fks = fetch_kernels_from_https(BASEURL + "fk/", "juno_v*.tf")
+        sclks = fetch_kernels_from_https(BASEURL + "sclk/", "JNO_SCLKSCET.*.tsc")
+        lsks = fetch_kernels_from_https(BASEURL + "lsk/", "naif*.tls")
 
     year, month, day = start_utc.split("-")
     yy = year[2:]
@@ -108,7 +137,7 @@ def get_kernels(KERNEL_DATAFOLDER: str, start_utc: float) -> list[str]:
         datestart, dateend = groups[0]
 
         if (int(datestart) <= intdate) & (int(dateend) >= intdate):
-            kernels.append(os.path.join('ck/', ck))
+            kernels.append(ck)
             nck += 1
 
     """ use the predicted kernels if there are no rec """
@@ -123,7 +152,7 @@ def get_kernels(KERNEL_DATAFOLDER: str, start_utc: float) -> list[str]:
             datestart, dateend = groups[0]
 
             if (int(datestart) <= intdate) & (int(dateend) >= intdate):
-                kernels.append(os.path.join('ck/', ck))
+                kernels.append(ck)
                 nck += 1
 
     spkpattern = r"spk_rec_([0-9]{6})_([0-9]{6})\S*"
@@ -136,7 +165,7 @@ def get_kernels(KERNEL_DATAFOLDER: str, start_utc: float) -> list[str]:
         datestart, dateend = groups[0]
 
         if (int(datestart) <= intdate) & (int(dateend) >= intdate):
-            kernels.append(os.path.join('spk/', spk))
+            kernels.append(spk)
             nspk += 1
 
     """ use the predicted kernels if there are no rec """
@@ -151,20 +180,20 @@ def get_kernels(KERNEL_DATAFOLDER: str, start_utc: float) -> list[str]:
             datestart, dateend = groups[0]
 
             if (int(datestart) <= intdate) & (int(dateend) >= intdate):
-                kernels.append(os.path.join('spk/', spk))
+                kernels.append(spk)
                 nspk += 1
 
     assert nck * nspk > 0, "Kernels not found for the given date range!"
 
     # load the latest updates for these
-    kernels.append(os.path.join('ik/', iks[-1]))
-    kernels.append(os.path.join('spk/', spks2[-1]))
-    kernels.append(os.path.join('spk/', spks3[-1]))
-    kernels.append(os.path.join('spk/', spks4[-1]))
-    kernels.append(os.path.join('pck/', pcks[-1]))
-    kernels.append(os.path.join('fk/', fks[-1]))
-    kernels.append(os.path.join('sclk/', sclks[-1]))
-    kernels.append(os.path.join('lsk/', lsks[-1]))
+    kernels.append(iks[-1])
+    kernels.append(spks2[-1])
+    kernels.append(spks3[-1])
+    kernels.append(spks4[-1])
+    kernels.append(pcks[-1])
+    kernels.append(fks[-1])
+    kernels.append(sclks[-1])
+    kernels.append(lsks[-1])
     kernels.append("spk/juno_rec_orbit.bsp")
     kernels.append("spk/juno_pred_orbit.bsp")
 

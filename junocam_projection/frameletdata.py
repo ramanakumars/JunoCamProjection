@@ -29,7 +29,7 @@ class FrameletData:
         start_utc = metadata["START_TIME"]
         self.start_et = spice.str2et(start_utc)
         fname = metadata["FILE_NAME"].replace("-raw.png", "")
-        fullimg = plt.imread(imgfolder + "%s-raw.png" % fname)
+        fullimg = plt.imread(os.path.join(imgfolder, f"{fname}-raw.png"))
 
         # ignore color channels in the image
         if len(fullimg.shape) == 3:

@@ -11,18 +11,9 @@ from .cython_utils import furnish_c, get_pixel_from_coords_c
 from .camera_funcs import CameraModel
 from .spice_utils import get_kernels
 from .frameletdata import FrameletData
-from .spatial import SpatialData
-import healpy as hp
+from .spatial import SpatialData, jupiter_crs
 from pyproj import crs
 from pyproj.transformer import Transformer
-
-# define the ellipsoid and datum for Jupiter
-jupiter = crs.datum.CustomEllipsoid('Jupiter', semi_major_axis=71492e3, semi_minor_axis=66854e3)
-primem = crs.datum.CustomPrimeMeridian(longitude=0, name='Jupiter Prime Meridian')
-jupiter_datum = crs.datum.CustomDatum('Jupiter', ellipsoid=jupiter, prime_meridian=primem)
-
-# this is the base cylindrical projection for Jupiter
-jupiter_crs = crs.GeographicCRS('Jupiter', datum=jupiter_datum)
 
 
 class Projector:
@@ -31,7 +22,7 @@ class Projector:
     of each pixel in a JunoCam image
     """
 
-    def __init__(self, imagefolder: str, meta: str, kerneldir: str = "./kernels/"):
+    def __init__(self, imagefolder: str, meta: str, kerneldir: str = "./kernels/", find_jitter: bool = True):
         """Initializes the Projector
 
         :param imagefolder: Path to the folder containing the image files
@@ -51,15 +42,19 @@ class Projector:
 
         self.framedata = FrameletData(metadata, imagefolder)
 
-        self.find_jitter(jitter_max=120)
+        if find_jitter:
+            self.find_jitter(jitter_max=120)
+        else:
+            self.framedata.update_jitter(0)
 
-    def load_kernels(self, KERNEL_DATAFOLDER: str) -> None:
+    def load_kernels(self, KERNEL_DATAFOLDER: str, offline: bool = False) -> None:
         """Get the kernels for the current spacecraft time and load them
 
         :param KERNEL_DATAFOLDER: path to the folder where kernels are stored
+        :param offline: use the kernels stored locally (saves time by not scraping the NAIF servers)
         """
         self.kernels = []
-        kernels = get_kernels(KERNEL_DATAFOLDER, self.start_utc)
+        kernels = get_kernels(KERNEL_DATAFOLDER, self.start_utc, offline)
         for kernel in kernels:
             furnish_c(kernel.encode("ascii"))
             spice.furnsh(kernel)
@@ -212,26 +207,18 @@ class Projector:
 
         return limbs_jcam
 
-    def process(self, nside: int = 512, num_procs: int = 8, apply_correction: str = 'ls', n_neighbor: int = 5, minnaert_k: float = 1.05) -> np.ndarray:
+    def process(self, num_procs: int = 8, apply_correction: str = 'ls', minnaert_k: float = 1.05) -> None:
         """Processes the current image into a HEALPix map of a given resolution. Also applies lightning correction as needed.
 
-        :param nside: resolution of the HEALPix map. See https://healpy.readthedocs.io/en/latest/tutorial.html, defaults to 512
         :param num_proces: number of cores to use for projection. Set to 1 to disable multithreading, defaults to 8
         :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minnaert' for Minnaert and 'none' for no correction, defaults to 'ls'
-        :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
         :param minnaert_k: the index for Minnaert correction. Only used when apply_correction='minnaert', defaults to 1.25
-
-        :return: the HEALPix map of the projected image (shape: (npixels, 3), where npixels is the corresponding image size for a given n_side)
         """
-        print(f"Projecting {self.fname} to a HEALPix grid with n_side={nside}")
+        print(f"Projecting {self.fname}")
 
         self.framedata.get_backplane(num_procs)
 
         self.apply_correction(apply_correction, minnaert_k)
-
-        map = self.project_to_healpix(nside, n_neighbor=n_neighbor)
-
-        return map
 
     def apply_correction(self, correction_type: str, minnaert_k: float = 1.05) -> None:
         """Apply the requested illumination correction
@@ -266,49 +253,9 @@ class Projector:
         """
         return np.transpose(self.framedata.image, (1, 0, 2, 3)).reshape(3, -1)
 
-    def project_to_healpix(self, nside: int, n_neighbor: int = 4, max_dist: int = 25) -> np.ndarray:
-        """Project the current image to a HEALPix map
-
-        :param nside: resolution of the HEALPix map. See https://healpy.readthedocs.io/en/latest/tutorial.html
-        :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
-        :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
-
-        :return: the HEALPix map of the projected image (shape: (npixels, 3), where npixels is the corresponding image size for a given n_side)
-        """
-        # get the image extents in pixel coordinate space
-        # clip half a pixel to avoid edge artifacts
-        x0 = np.nanmin(self.framecoords[:, :, 0]) + 0.5
-        x1 = np.nanmax(self.framecoords[:, :, 0]) - 0.5
-        y0 = np.nanmin(self.framecoords[:, :, 1]) + 0.5
-        y1 = np.nanmax(self.framecoords[:, :, 1]) - 0.5
-
-        extents = np.array([x0, x1, y0, y1])
-
-        # now we construct the map grid
-        longrid, latgrid = hp.pix2ang(nside, list(range(hp.nside2npix(nside))), lonlat=True)
-
-        pix = np.nan * np.zeros((longrid.size, 2))
-
-        # this assumes the midplane mode where the coordinates
-        # are using the Green band camera
-        et = self.framedata.tmid
-
-        # get the spacecraft location and transformation to and from the JUNOCAM coordinates
-        get_pixel_from_coords_c(np.radians(longrid), np.radians(latgrid), longrid.size, et, extents, pix)
-
-        # get the locations that JunoCam observed
-        inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
-        pix = pix[inds]
-        pixel_inds = hp.ang2pix(nside, longrid[inds], latgrid[inds], lonlat=True)
-
-        # finally, project the image onto the healpix grid
-        m = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix, longrid.shape, n_neighbor=n_neighbor, max_dist=max_dist)
-
-        return m
-
-    def project_to_laea(self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
+    def project_to_pyproj(self, projection: crs.coordinate_operation.CoordinateOperation, resolution: float = 50, n_neighbor: int = 10, max_dist: float = 25):
         '''
-        Convert the image to a Lambert Azimuthal Equal Area projection centered at the sub-spacecraft location.
+        Convert the image to an arbitrary PyProj projection
         Note that we have to convert to a positive-east Sys III longitude so that PROJ does the right calculations
 
         :param resolution: the resolution of the final image in km/pixel
@@ -317,15 +264,8 @@ class Projector:
 
         :returns: the image in LAEA projection (shape: ny, nx, 3)
         '''
-        # project with the sub-spacecraft location directly at the center
-        latitude = self.framedata.sclat
-        longitude = self.framedata.sclon
-
-        # get the coordinate transformation from Cylindrical -> LAEA
-        laea = crs.coordinate_operation.LambertAzimuthalEqualAreaConversion(latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude)
-        jupiter_laea = crs.ProjectedCRS(laea, 'Jupiter LAEA', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
-        transformer = Transformer.from_crs(jupiter_crs, jupiter_laea)
-        inv_transformer = Transformer.from_crs(jupiter_laea, jupiter_crs)
+        transformer = Transformer.from_crs(jupiter_crs, projection)
+        inv_transformer = Transformer.from_crs(projection, jupiter_crs)
 
         # find the locations in the image where we have valid data
         mask = np.isfinite(self.framedata.longitude)
@@ -366,7 +306,28 @@ class Projector:
         mapi = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix_masked, lon_grid.shape, n_neighbor=n_neighbor, max_dist=max_dist)
 
         # finally, reshape into the 2D array and return it
-        return SpatialData(self.fname, mapi.reshape((yy_grid.size, xx_grid.size, 3)), jupiter_laea, xx_grid, yy_grid)
+        return SpatialData(self.fname, mapi.reshape((yy_grid.size, xx_grid.size, 3)), projection, xx_grid, yy_grid, lon_grid, lat_grid)
+
+    def project_to_laea(self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
+        '''
+        Convert the image to a Lambert Azimuthal Equal Area projection centered at the sub-spacecraft location.
+        Note that we have to convert to a positive-east Sys III longitude so that PROJ does the right calculations
+
+        :param resolution: the resolution of the final image in km/pixel
+        :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
+        :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
+
+        :returns: the image in LAEA projection (shape: ny, nx, 3)
+        '''
+        # project with the sub-spacecraft location directly at the center
+        latitude = self.framedata.sclat
+        longitude = self.framedata.sclon
+
+        # get the coordinate transformation from Cylindrical -> LAEA
+        laea = crs.coordinate_operation.LambertAzimuthalEqualAreaConversion(latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude)
+        jupiter_laea = crs.ProjectedCRS(laea, 'Jupiter LAEA', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
+
+        return self.project_to_pyproj(jupiter_laea, resolution, n_neighbor, max_dist)
 
     def project_to_mercator(self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
         '''
@@ -377,7 +338,7 @@ class Projector:
         :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
         :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
 
-        :returns: the image in LAEA projection (shape: ny, nx, 3)
+        :returns: the image in Tranverse Mercator projection (shape: ny, nx, 3)
         '''
         # project with the sub-spacecraft location directly at the center
         latitude = self.framedata.sclat
@@ -386,60 +347,19 @@ class Projector:
         # get the coordinate transformation from Cylindrical -> TMerc
         mercator = crs.coordinate_operation.TransverseMercatorConversion(latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude)
         jupiter_mercator = crs.ProjectedCRS(mercator, 'Jupiter Mercator', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
-        transformer = Transformer.from_crs(jupiter_crs, jupiter_mercator)
-        inv_transformer = Transformer.from_crs(jupiter_mercator, jupiter_crs)
 
-        # find the locations in the image where we have valid data
-        mask = np.isfinite(self.framedata.longitude)
-        xx = np.zeros_like(self.framedata.longitude)
-        yy = np.zeros_like(xx)
-
-        # and calculate the distance between those points and the center of the image
-        xx[mask], yy[mask] = transformer.transform(360 - self.framedata.longitude[mask], self.framedata.latitude[mask])
-
-        # get the new camera grid with the given resolution
-        # we are essentially constructing a field in the projection
-        xx_grid = np.arange(np.nanmin(xx), np.nanmax(xx), resolution * 1e3)
-        yy_grid = np.arange(np.nanmin(yy), np.nanmax(yy), resolution * 1e3)
-
-        XX, YY = np.meshgrid(xx_grid, yy_grid)
-
-        # get the corresponding lat/lon grid for the image
-        lon_grid, lat_grid = inv_transformer.transform(XX.flatten(), YY.flatten())
-
-        # get the image extents in pixel coordinate space
-        # clip half a pixel to avoid edge artifacts
-        x0 = np.nanmin(self.framecoords[:, :, 0]) + 0.5
-        x1 = np.nanmax(self.framecoords[:, :, 0]) - 0.5
-        y0 = np.nanmin(self.framecoords[:, :, 1]) + 0.5
-        y1 = np.nanmax(self.framecoords[:, :, 1]) - 0.5
-
-        extents = np.array([x0, x1, y0, y1])
-        pix = np.nan * np.zeros((lon_grid.size, 2))
-        et = self.framedata.tmid
-
-        # get the locations on the image where we have data
-        get_pixel_from_coords_c(np.radians(360 - lon_grid.flatten()), np.radians(lat_grid.flatten()), lon_grid.size, et, extents, pix)
-
-        inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
-        pix_masked = pix[inds]
-        pixel_inds = np.asarray(range(lon_grid.size))[inds]
-
-        mapi = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix_masked, lon_grid.shape, n_neighbor=n_neighbor, max_dist=max_dist)
-
-        # finally, reshape into the 2D array and return it
-        return SpatialData(self.fname, mapi.reshape((yy_grid.size, xx_grid.size, 3)), jupiter_mercator, xx_grid, yy_grid)
+        return self.project_to_pyproj(jupiter_mercator, resolution, n_neighbor, max_dist)
 
     def project_to_az_eqdist(self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
         '''
-        Convert the image to a Transverse Mercator projection centered at the sub-spacecraft location.
+        Convert the image to a Azimuthal Equidistant Projection centered at the sub-spacecraft location.
         Note that we have to convert to a positive-east Sys III longitude so that PROJ does the right calculations
 
         :param resolution: the resolution of the final image in km/pixel
         :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
         :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
 
-        :returns: the image in LAEA projection (shape: ny, nx, 3)
+        :returns: the image in Azimuthal Equidistant projection (shape: ny, nx, 3)
         '''
         # project with the sub-spacecraft location directly at the center
         latitude = self.framedata.sclat
@@ -448,67 +368,37 @@ class Projector:
         # get the coordinate transformation from Cylindrical -> TMerc
         az_eqdist = crs.coordinate_operation.AzimuthalEquidistantConversion(latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude)
         jupiter_az_eqdist = crs.ProjectedCRS(az_eqdist, 'Jupiter Azimuthal Equidistant', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
-        transformer = Transformer.from_crs(jupiter_crs, jupiter_az_eqdist)
-        inv_transformer = Transformer.from_crs(jupiter_az_eqdist, jupiter_crs)
 
-        # find the locations in the image where we have valid data
-        mask = np.isfinite(self.framedata.longitude)
-        xx = np.zeros_like(self.framedata.longitude)
-        yy = np.zeros_like(xx)
+        return self.project_to_pyproj(jupiter_az_eqdist, resolution, n_neighbor, max_dist)
 
-        # and calculate the distance between those points and the center of the image
-        xx[mask], yy[mask] = transformer.transform(360 - self.framedata.longitude[mask], self.framedata.latitude[mask])
-
-        # get the new camera grid with the given resolution
-        # we are essentially constructing a field in the projection
-        xx_grid = np.arange(np.nanmin(xx), np.nanmax(xx), resolution * 1e3)
-        yy_grid = np.arange(np.nanmin(yy), np.nanmax(yy), resolution * 1e3)
-
-        XX, YY = np.meshgrid(xx_grid, yy_grid)
-
-        # get the corresponding lat/lon grid for the image
-        lon_grid, lat_grid = inv_transformer.transform(XX.flatten(), YY.flatten())
-
-        # get the image extents in pixel coordinate space
-        # clip half a pixel to avoid edge artifacts
-        x0 = np.nanmin(self.framecoords[:, :, 0]) + 0.5
-        x1 = np.nanmax(self.framecoords[:, :, 0]) - 0.5
-        y0 = np.nanmin(self.framecoords[:, :, 1]) + 0.5
-        y1 = np.nanmax(self.framecoords[:, :, 1]) - 0.5
-
-        extents = np.array([x0, x1, y0, y1])
-        pix = np.nan * np.zeros((lon_grid.size, 2))
-        et = self.framedata.tmid
-
-        # get the locations on the image where we have data
-        get_pixel_from_coords_c(np.radians(360 - lon_grid.flatten()), np.radians(lat_grid.flatten()), lon_grid.size, et, extents, pix)
-
-        inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
-        pix_masked = pix[inds]
-        pixel_inds = np.asarray(range(lon_grid.size))[inds]
-
-        mapi = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix_masked, lon_grid.shape, n_neighbor=n_neighbor, max_dist=max_dist)
-
-        # finally, reshape into the 2D array and return it
-        return SpatialData(self.fname, mapi.reshape((yy_grid.size, xx_grid.size, 3)), jupiter_az_eqdist, xx_grid, yy_grid)
-
-    def project_to_cylindrical(self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
+    def project_to_cylindrical(self, resolution: float = 50, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
         '''
-        Convert the image to a Cylindrical projection centered at the sub-spacecraft location.
+        Convert the image to a Cylindrical projection
         Note that we have to convert to a positive-east Sys III longitude so that PROJ does the right calculations
 
         :param resolution: the resolution of the final image in pixels/degree
         :param n_neighbor: the number of nearest neighbours to use for interpolating. Increase to get more details at the cost of performance, defaults to 5
         :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
 
-        :returns: the SpatialData object in Cylindrical Projection
+        :returns: the image in cylindrical projection (shape: nlat, nlon, 3)
         '''
 
-        # find the locations in the image where we have valid data
+        # get the coordinate transformation from Cylindrical -> TMerc
+        eqcyl = crs.coordinate_operation.EquidistantCylindricalConversion()
+        jupiter_cyl = crs.ProjectedCRS(eqcyl, 'Jupiter Cylindrical', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
+
+        return self.project_to_pyproj(jupiter_cyl, resolution, n_neighbor, max_dist)
+
+    def project_to_cylindrical_fullglobe(self, resolution: float = 50, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
+        # get the coordinate transformation from Cylindrical -> TMerc
+        eqcyl = crs.coordinate_operation.EquidistantCylindricalConversion()
+        projection = crs.ProjectedCRS(eqcyl, 'Jupiter Cylindrical', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
+
         # get the corresponding lat/lon grid for the image
-        lon = np.linspace(0, 360, 360 * resolution)
-        lat = np.linspace(-90, 90, 180 * resolution)
-        lon_grid, lat_grid = np.meshgrid(lon, lat)
+        lon_grid = np.linspace(0, 360, resolution * 360 + 1, endpoint=True)
+        lat_grid = np.linspace(-90, 90, resolution * 180 + 1, endpoint=True)
+
+        LON, LAT = np.meshgrid(lon_grid, lat_grid)
 
         # get the image extents in pixel coordinate space
         # clip half a pixel to avoid edge artifacts
@@ -518,42 +408,43 @@ class Projector:
         y1 = np.nanmax(self.framecoords[:, :, 1]) - 0.5
 
         extents = np.array([x0, x1, y0, y1])
-        pix = np.nan * np.zeros((lon_grid.size, 2))
+        pix = np.nan * np.zeros((LON.size, 2))
         et = self.framedata.tmid
 
         # get the locations on the image where we have data
-        get_pixel_from_coords_c(np.radians(360 - lon_grid.flatten()), np.radians(lat_grid.flatten()), lon_grid.size, et, extents, pix)
+        get_pixel_from_coords_c(np.radians(360 - LON.flatten()), np.radians(LAT.flatten()), LON.size, et, extents, pix)
 
         inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
         pix_masked = pix[inds]
-        pixel_inds = np.asarray(range(lon_grid.size))[inds]
+        pixel_inds = np.asarray(range(LON.size))[inds]
 
-        mapi = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix_masked, lon_grid.shape, n_neighbor=n_neighbor, max_dist=max_dist)
+        mapi = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix_masked, LON.shape, n_neighbor=n_neighbor, max_dist=max_dist)
 
         # finally, reshape into the 2D array and return it
-        return SpatialData(self.fname, mapi.reshape((lat.size, lon.size, 3)), jupiter_crs, lon_grid, lat_grid)
+        return SpatialData(self.fname, mapi.reshape((lat_grid.size, lon_grid.size, 3)), projection, lon_grid, lat_grid, lon_grid, lat_grid)
 
     @classmethod
-    def load(cls, infile: str, kerneldir: str = './'):
+    def load(cls, infile: str, kerneldir: str = './', offline=False):
         '''Load the object from a netCDF file
 
         :param infile: path to the input .nc file
         :param kerneldir: Path to folder where SPICE kernels will be stored, defaults to "./"
+        :param offline: use the kernels stored locally (saves time by not scraping the NAIF servers)
 
         :return: the Projector object with the loaded data and backplane information
         '''
 
-        self = cls.__new__(cls)
+        self = cls.__new__(cls, find_jitter=False)
 
         with nc.Dataset(infile, 'r') as indata:
             self.fname = indata.id
             self.start_utc = indata.start_utc
-            self.load_kernels(kerneldir)
+            self.load_kernels(kerneldir, offline)
 
             self.framedata = FrameletData.from_file(indata.start_et, indata.sub_lat, indata.sub_lon, indata.frame_delay, indata.exposure,
-                                                    indata.variables['rawimage'][:], indata.variables['latitude'][:], indata.variables['longitude'][:],
-                                                    indata.variables['incidence'][:], indata.variables['emission'][:],
-                                                    indata.variables['fluxcal'][:], indata.variables['coords'][:])
+                                                    indata.variables['rawimage'][:].astype(float), indata.variables['latitude'][:].astype(float), indata.variables['longitude'][:].astype(float),
+                                                    indata.variables['incidence'][:].astype(float), indata.variables['emission'][:].astype(float),
+                                                    indata.variables['fluxcal'][:].astype(float), indata.variables['coords'][:].astype(float))
             self.jitter = indata.jitter
             self.framedata.update_jitter(indata.jitter)
 
