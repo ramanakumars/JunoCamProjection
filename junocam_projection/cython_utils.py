@@ -5,19 +5,11 @@ import ctypes
 # load the C library to get the projection mask
 project_c = np.ctypeslib.load_library("project.so", os.path.dirname(__file__))
 
-array_1d_int = np.ctypeslib.ndpointer(
-    dtype=int, ndim=1, flags="C_CONTIGUOUS"
-)
-array_1d_double = np.ctypeslib.ndpointer(
-    dtype=np.double, ndim=1, flags="C_CONTIGUOUS"
-)
-array_2d_double = np.ctypeslib.ndpointer(
-    dtype=np.double, ndim=2, flags="C_CONTIGUOUS"
-)
+array_1d_int = np.ctypeslib.ndpointer(dtype=int, ndim=1, flags="C_CONTIGUOUS")
+array_1d_double = np.ctypeslib.ndpointer(dtype=np.double, ndim=1, flags="C_CONTIGUOUS")
+array_2d_double = np.ctypeslib.ndpointer(dtype=np.double, ndim=2, flags="C_CONTIGUOUS")
 
-array_3d_double = np.ctypeslib.ndpointer(
-    dtype=np.double, ndim=3, flags="C_CONTIGUOUS"
-)
+array_3d_double = np.ctypeslib.ndpointer(dtype=np.double, ndim=3, flags="C_CONTIGUOUS")
 
 process_c = project_c.process
 process_c.argtypes = [
@@ -41,7 +33,7 @@ project_midplane_c.argtypes = [
     array_2d_double,
     array_2d_double,
     array_3d_double,
-    array_2d_double
+    array_2d_double,
 ]
 
 get_pixel_from_coords_c = project_c.get_pixel_from_coords

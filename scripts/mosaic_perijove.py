@@ -9,25 +9,48 @@ import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
-parser = argparse.ArgumentParser(description="Process all images for a given perijoves to a cylindrical projection")
-parser.add_argument("--map_folder", help="Path to the cylindrically projected maps (npy files)", type=str, required=True)
-parser.add_argument("--sigma_filter", help="Filter width for smoothing", type=int, default=40)
-parser.add_argument("--sigma_cut", help="Filter width for edge detection", type=int, default=50)
-parser.add_argument("--sigma_luminance", help="Filter width for luminance correction", type=int, default=80)
-parser.add_argument("--output", help="Path to output mosaic (npy)", type=str, default="mosaic.npy")
+parser = argparse.ArgumentParser(
+    description="Process all images for a given perijoves to a cylindrical projection"
+)
+parser.add_argument(
+    "--map_folder",
+    help="Path to the cylindrically projected maps (npy files)",
+    type=str,
+    required=True,
+)
+parser.add_argument(
+    "--sigma_filter", help="Filter width for smoothing", type=int, default=40
+)
+parser.add_argument(
+    "--sigma_cut", help="Filter width for edge detection", type=int, default=50
+)
+parser.add_argument(
+    "--sigma_luminance",
+    help="Filter width for luminance correction",
+    type=int,
+    default=80,
+)
+parser.add_argument(
+    "--output", help="Path to output mosaic (npy)", type=str, default="mosaic.npy"
+)
 
 args = parser.parse_args()
 
-KERNEL_DATAFOLDER = './kernels/'
-files = sorted(glob.glob(os.path.join(args.map_folder, '*.npy')))
+KERNEL_DATAFOLDER = "./kernels/"
+files = sorted(glob.glob(os.path.join(args.map_folder, "*.npy")))
 
 logger.info(f"Found {len(files)} files")
 
 maps = []
 
-for file in tqdm.tqdm(files, desc='Loading files', dynamic_ncols=True):
+for file in tqdm.tqdm(files, desc="Loading files", dynamic_ncols=True):
     maps.append(np.load(file))
 
-mosaic = blend_maps(np.asarray(maps), sigma_filter=args.sigma_filter, sigma_cut=args.sigma_cut, sigma_luminance=args.sigma_luminance)
+mosaic = blend_maps(
+    np.asarray(maps),
+    sigma_filter=args.sigma_filter,
+    sigma_cut=args.sigma_cut,
+    sigma_luminance=args.sigma_luminance,
+)
 
 np.save(args.output, mosaic)
