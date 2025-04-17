@@ -14,7 +14,6 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Install the python dependencies using the `uv sync`:
-
 ```bash
 uv sync
 ```
@@ -22,10 +21,18 @@ uv sync
 ## Installation
 To run the projection code, the C extension needs to be compiled. To do this, run,
 ```bash
-cd projection/
+cd junocam_projection/
 make clean
 make
 ```
+
+Then, install the package using a Python package manager. For example:
+
+```bash
+pip3 install .
+```
+
+This will install the `junocam_projection` package into your Python environment. 
 
 ## Examples
 
