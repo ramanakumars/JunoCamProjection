@@ -41,3 +41,6 @@ repository = "https://www.github.com/ramanakumars/JunoCamProjection"
 
 [tool.ruff.format]
 skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+ignore = ["E501"]
