@@ -36,7 +36,7 @@ def mosaic_median(maps: np.ndarray) -> np.ndarray:
     maps_clipped = maps.copy()
     maps_clipped[np.abs(maps) < np.percentile(maps[maps > 0], 1)] = np.nan
     mosaic = nanmedian_axis0(maps_clipped)
-    mosaic[~np.isfinite(mosaic)] = 0.
+    mosaic[~np.isfinite(mosaic)] = 0.0
     return mosaic
 
 
@@ -49,7 +49,7 @@ def lowpass(data: np.ndarray, sigma: float):
 
     :return: low-pass filtered image (blurred image)
     """
-    return uniform_filter(data, size=sigma, mode=['nearest', 'wrap'])
+    return uniform_filter(data, size=sigma, mode=["nearest", "wrap"])
 
 
 def get_footprint(Ls: np.ndarray, sigma_cut: float):
@@ -113,20 +113,25 @@ def highpass_luminance_correction(mapi: np.ndarray, sigma_filter: float = 50):
     # we filter the map on the low-frequency to get only the high-frequency components
     # and cut off the edges
     filtered = mapi / (low_freq + 1e-6)
-    filtered[~np.isfinite(filtered)] = 0.
+    filtered[~np.isfinite(filtered)] = 0.0
 
     return filtered
 
 
-def blend_maps(maps: np.ndarray, sigma_luminance: float = 50, sigma_filter: float = 40, sigma_cut: float = 50) -> np.ndarray:
-    '''
+def blend_maps(
+    maps: np.ndarray,
+    sigma_luminance: float = 50,
+    sigma_filter: float = 40,
+    sigma_cut: float = 50,
+) -> np.ndarray:
+    """
     Combine the images using the USGS/ISIS no-seam technique. This works by applying a low-pass filter on a mosaic,
     and then combining the low-pass mosaic with a mosaic of the high-pass filtered data, which tends to remove seams efficiently.
 
     :param maps: input array of maps (shape: [nfiles, height, width, 3])
     :param sigma_filter: filter width for the high-pass/low-pass filter
     :param sigma_cut: filter width for edge detection (to truncate high frequency signal at the image edges)
-    '''
+    """
     # convert to float32 to speed up the calculation
     maps = maps.astype(np.float32)
 
@@ -139,12 +144,14 @@ def blend_maps(maps: np.ndarray, sigma_luminance: float = 50, sigma_filter: floa
     # and adjusting the input values to match each other
     footprints = np.zeros((nfiles, nlat, nlon, 3))
     for i, mapi in enumerate(tqdm.tqdm(maps, desc="Applying luminance high pass")):
-        footprints[i] = np.repeat(get_footprint(mapi.mean(-1), sigma_cut)[:, :, np.newaxis], 3, axis=2)
+        footprints[i] = np.repeat(
+            get_footprint(mapi.mean(-1), sigma_cut)[:, :, np.newaxis], 3, axis=2
+        )
 
         mapi = highpass_luminance_correction(mapi, sigma_luminance)
         mapi = mapi / np.median(mapi[mapi > 0])
-        mapi[mapi < 1e-4] = 0.
-        mapi[~np.isfinite(mapi)] = 0.
+        mapi[mapi < 1e-4] = 0.0
+        mapi[~np.isfinite(mapi)] = 0.0
 
         maps_filtered[i] = mapi
 
@@ -160,10 +167,13 @@ def blend_maps(maps: np.ndarray, sigma_luminance: float = 50, sigma_filter: floa
 
     # then high-pass filter the maps
     highpass_data = np.zeros_like(maps, dtype=np.float32)
-    for i, mapi in enumerate(tqdm.tqdm(maps_filtered, desc="Applying high-pass filter")):
+    for i, mapi in enumerate(
+        tqdm.tqdm(maps_filtered, desc="Applying high-pass filter")
+    ):
         highpass_data[i] = highpass(mapi, sigma_filter) * footprints[i]
 
         # trim the edges again since we tend to end up with certain peaks
+
         if np.abs(highpass_data[i]).max() > 0:
             highpass_data[i][highpass_data[i] > np.percentile(highpass_data[i][np.abs(highpass_data[i]) > 0], 99)] = 0.
 

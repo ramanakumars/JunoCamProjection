@@ -22,7 +22,13 @@ class Projector:
     of each pixel in a JunoCam image
     """
 
-    def __init__(self, imagefolder: str, meta: str, kerneldir: str = "./kernels/", find_jitter: bool = True):
+    def __init__(
+        self,
+        imagefolder: str,
+        meta: str,
+        kerneldir: str = "./kernels/",
+        find_jitter: bool = True,
+    ):
         """Initializes the Projector
 
         :param imagefolder: Path to the folder containing the image files
@@ -60,7 +66,9 @@ class Projector:
             spice.furnsh(kernel)
             self.kernels.append(kernel)
 
-    def find_jitter(self, jitter_max: float = 25, threshold: float = 80, plot: bool = False) -> None:
+    def find_jitter(
+        self, jitter_max: float = 25, threshold: float = 80, plot: bool = False
+    ) -> None:
         """Find the best jitter value to the spacecraft camera time
 
 
@@ -140,9 +148,7 @@ class Projector:
             if plot:
                 plt.figure(dpi=200)
                 plt.imshow(frame, cmap="gray")
-                plt.plot(
-                    limbs_jcam[:, 0], limbs_jcam[:, 1], "r.", markersize=0.1
-                )
+                plt.plot(limbs_jcam[:, 0], limbs_jcam[:, 1], "r.", markersize=0.1)
                 plt.plot(
                     limb_img_points[:, 0],
                     limb_img_points[:, 1],
@@ -183,17 +189,29 @@ class Projector:
         scloc, lt = spice.spkpos("JUNO", eti, "IAU_JUPITER", "CN+S", "JUPITER")
 
         # use the sub spacecraft point as the reference vector
-        refvec, _, _ = spice.subpnt("INTERCEPT/ELLIPSOID", "JUPITER", eti, "IAU_JUPITER", "CN+S", "JUNO")
+        refvec, _, _ = spice.subpnt(
+            "INTERCEPT/ELLIPSOID", "JUPITER", eti, "IAU_JUPITER", "CN+S", "JUNO"
+        )
 
-        _, _, eplimbs, limbs_IAU = spice.limbpt(METHOD, "JUPITER", eti, "IAU_JUPITER", "CN+S",
-                                                CORLOC, "JUNO", refvec, np.radians(0.1), 3600,
-                                                4.0, 0.001, 7200)
+        _, _, eplimbs, limbs_IAU = spice.limbpt(
+            METHOD,
+            "JUPITER",
+            eti,
+            "IAU_JUPITER",
+            "CN+S",
+            CORLOC,
+            "JUNO",
+            refvec,
+            np.radians(0.1),
+            3600,
+            4.0,
+            0.001,
+            7200,
+        )
 
         limbs_jcam = np.zeros((limbs_IAU.shape[0], 2))
         for i, limbi in enumerate(limbs_IAU):
-            transform = spice.pxfrm2(
-                "IAU_JUPITER", "JUNO_JUNOCAM", eplimbs[i], eti
-            )
+            transform = spice.pxfrm2("IAU_JUPITER", "JUNO_JUNOCAM", eplimbs[i], eti)
             veci = np.matmul(transform, limbs_IAU[i, :])
             limbs_jcam[i, :] = cami.vec2pix(veci)
 
@@ -207,7 +225,9 @@ class Projector:
 
         return limbs_jcam
 
-    def process(self, num_procs: int = 8, apply_correction: str = 'ls', minnaert_k: float = 1.05) -> None:
+    def process(
+        self, num_procs: int = 8, apply_correction: str = "ls", minnaert_k: float = 1.05
+    ) -> None:
         """Processes the current image into a HEALPix map of a given resolution. Also applies lightning correction as needed.
 
         :param num_proces: number of cores to use for projection. Set to 1 to disable multithreading, defaults to 8
@@ -228,33 +248,44 @@ class Projector:
         :param apply_correction: the choice of lightning correction to apply. Choose betwen 'ls' for Lommel-Seeliger, 'minnaert' for Minnaert and 'none' for no correction, defaults to 'ls'
         :param minnaert_k: the index for Minnaert correction. Only used when apply_correction='minnaert', defaults to 1.25
         """
-        if correction_type == 'ls':
+        if correction_type == "ls":
             print("Applying Lommel-Seeliger correction")
             for frame in self.framedata.framelets:
-                frame.image = apply_lommel_seeliger(frame.rawimg / frame.fluxcal, frame.incidence, frame.incidence)
-        elif correction_type == 'minnaert':
+                frame.image = apply_lommel_seeliger(
+                    frame.rawimg / frame.fluxcal, frame.incidence, frame.incidence
+                )
+        elif correction_type == "minnaert":
             print("Applying Minnaert correction")
             for frame in self.framedata.framelets:
-                frame.image = apply_minnaert(frame.rawimg / frame.fluxcal, frame.incidence, frame.incidence, k=minnaert_k)
-        elif correction_type == 'none':
+                frame.image = apply_minnaert(
+                    frame.rawimg / frame.fluxcal,
+                    frame.incidence,
+                    frame.incidence,
+                    k=minnaert_k,
+                )
+        elif correction_type == "none":
             print("Applying no correction")
             for frame in self.framedata.framelets:
                 frame.image = frame.rawimg / frame.fluxcal
 
     @property
     def framecoords(self) -> np.ndarray:
-        """Get the coordinates of each pixel in the current camera frame in the midplane frame
-        """
+        """Get the coordinates of each pixel in the current camera frame in the midplane frame"""
         return np.transpose(self.framedata.coords, (1, 0, 2, 3, 4)).reshape(3, -1, 2)
 
     @property
     def imagevalues(self) -> np.ndarray:
-        """Get the illumination corrected image values from each frame
-        """
+        """Get the illumination corrected image values from each frame"""
         return np.transpose(self.framedata.image, (1, 0, 2, 3)).reshape(3, -1)
 
-    def project_to_pyproj(self, projection: crs.coordinate_operation.CoordinateOperation, resolution: float = 50, n_neighbor: int = 10, max_dist: float = 25):
-        '''
+    def project_to_pyproj(
+        self,
+        projection: crs.coordinate_operation.CoordinateOperation,
+        resolution: float = 50,
+        n_neighbor: int = 10,
+        max_dist: float = 25,
+    ):
+        """
         Convert the image to an arbitrary PyProj projection
         Note that we have to convert to a positive-east Sys III longitude so that PROJ does the right calculations
 
@@ -263,7 +294,7 @@ class Projector:
         :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
 
         :returns: the image in LAEA projection (shape: ny, nx, 3)
-        '''
+        """
         transformer = Transformer.from_crs(jupiter_crs, projection)
         inv_transformer = Transformer.from_crs(projection, jupiter_crs)
 
@@ -273,7 +304,9 @@ class Projector:
         yy = np.zeros_like(xx)
 
         # and calculate the distance between those points and the center of the image
-        xx[mask], yy[mask] = transformer.transform(360 - self.framedata.longitude[mask], self.framedata.latitude[mask])
+        xx[mask], yy[mask] = transformer.transform(
+            360 - self.framedata.longitude[mask], self.framedata.latitude[mask]
+        )
 
         # get the new camera grid with the given resolution
         # we are essentially constructing a field in LAEA projection
@@ -297,19 +330,44 @@ class Projector:
         et = self.framedata.tmid
 
         # get the locations on the image where we have data
-        get_pixel_from_coords_c(np.radians(360 - lon_grid.flatten()), np.radians(lat_grid.flatten()), lon_grid.size, et, extents, pix)
+        get_pixel_from_coords_c(
+            np.radians(360 - lon_grid.flatten()),
+            np.radians(lat_grid.flatten()),
+            lon_grid.size,
+            et,
+            extents,
+            pix,
+        )
 
         inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
         pix_masked = pix[inds]
         pixel_inds = np.asarray(range(lon_grid.size))[inds]
 
-        mapi = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix_masked, lon_grid.shape, n_neighbor=n_neighbor, max_dist=max_dist)
+        mapi = create_image_from_grid(
+            self.framecoords,
+            self.imagevalues,
+            pixel_inds,
+            pix_masked,
+            lon_grid.shape,
+            n_neighbor=n_neighbor,
+            max_dist=max_dist,
+        )
 
         # finally, reshape into the 2D array and return it
-        return SpatialData(self.fname, mapi.reshape((yy_grid.size, xx_grid.size, 3)), projection, xx_grid, yy_grid, lon_grid, lat_grid)
+        return SpatialData(
+            self.fname,
+            mapi.reshape((yy_grid.size, xx_grid.size, 3)),
+            projection,
+            xx_grid,
+            yy_grid,
+            lon_grid,
+            lat_grid,
+        )
 
-    def project_to_laea(self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
-        '''
+    def project_to_laea(
+        self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25
+    ) -> SpatialData:
+        """
         Convert the image to a Lambert Azimuthal Equal Area projection centered at the sub-spacecraft location.
         Note that we have to convert to a positive-east Sys III longitude so that PROJ does the right calculations
 
@@ -318,19 +376,25 @@ class Projector:
         :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
 
         :returns: the image in LAEA projection (shape: ny, nx, 3)
-        '''
+        """
         # project with the sub-spacecraft location directly at the center
         latitude = self.framedata.sclat
         longitude = self.framedata.sclon
 
         # get the coordinate transformation from Cylindrical -> LAEA
-        laea = crs.coordinate_operation.LambertAzimuthalEqualAreaConversion(latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude)
-        jupiter_laea = crs.ProjectedCRS(laea, 'Jupiter LAEA', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
+        laea = crs.coordinate_operation.LambertAzimuthalEqualAreaConversion(
+            latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude
+        )
+        jupiter_laea = crs.ProjectedCRS(
+            laea, "Jupiter LAEA", crs.coordinate_system.Cartesian2DCS(), jupiter_crs
+        )
 
         return self.project_to_pyproj(jupiter_laea, resolution, n_neighbor, max_dist)
 
-    def project_to_mercator(self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
-        '''
+    def project_to_mercator(
+        self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25
+    ) -> SpatialData:
+        """
         Convert the image to a Transverse Mercator projection centered at the sub-spacecraft location.
         Note that we have to convert to a positive-east Sys III longitude so that PROJ does the right calculations
 
@@ -339,19 +403,30 @@ class Projector:
         :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
 
         :returns: the image in Tranverse Mercator projection (shape: ny, nx, 3)
-        '''
+        """
         # project with the sub-spacecraft location directly at the center
         latitude = self.framedata.sclat
         longitude = self.framedata.sclon
 
         # get the coordinate transformation from Cylindrical -> TMerc
-        mercator = crs.coordinate_operation.TransverseMercatorConversion(latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude)
-        jupiter_mercator = crs.ProjectedCRS(mercator, 'Jupiter Mercator', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
+        mercator = crs.coordinate_operation.TransverseMercatorConversion(
+            latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude
+        )
+        jupiter_mercator = crs.ProjectedCRS(
+            mercator,
+            "Jupiter Mercator",
+            crs.coordinate_system.Cartesian2DCS(),
+            jupiter_crs,
+        )
 
-        return self.project_to_pyproj(jupiter_mercator, resolution, n_neighbor, max_dist)
+        return self.project_to_pyproj(
+            jupiter_mercator, resolution, n_neighbor, max_dist
+        )
 
-    def project_to_az_eqdist(self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
-        '''
+    def project_to_az_eqdist(
+        self, resolution: float = 100, n_neighbor: int = 10, max_dist: float = 25
+    ) -> SpatialData:
+        """
         Convert the image to a Azimuthal Equidistant Projection centered at the sub-spacecraft location.
         Note that we have to convert to a positive-east Sys III longitude so that PROJ does the right calculations
 
@@ -360,19 +435,30 @@ class Projector:
         :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
 
         :returns: the image in Azimuthal Equidistant projection (shape: ny, nx, 3)
-        '''
+        """
         # project with the sub-spacecraft location directly at the center
         latitude = self.framedata.sclat
         longitude = self.framedata.sclon
 
         # get the coordinate transformation from Cylindrical -> TMerc
-        az_eqdist = crs.coordinate_operation.AzimuthalEquidistantConversion(latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude)
-        jupiter_az_eqdist = crs.ProjectedCRS(az_eqdist, 'Jupiter Azimuthal Equidistant', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
+        az_eqdist = crs.coordinate_operation.AzimuthalEquidistantConversion(
+            latitude_natural_origin=latitude, longitude_natural_origin=360 - longitude
+        )
+        jupiter_az_eqdist = crs.ProjectedCRS(
+            az_eqdist,
+            "Jupiter Azimuthal Equidistant",
+            crs.coordinate_system.Cartesian2DCS(),
+            jupiter_crs,
+        )
 
-        return self.project_to_pyproj(jupiter_az_eqdist, resolution, n_neighbor, max_dist)
+        return self.project_to_pyproj(
+            jupiter_az_eqdist, resolution, n_neighbor, max_dist
+        )
 
-    def project_to_cylindrical(self, resolution: float = 50, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
-        '''
+    def project_to_cylindrical(
+        self, resolution: float = 50, n_neighbor: int = 10, max_dist: float = 25
+    ) -> SpatialData:
+        """
         Convert the image to a Cylindrical projection
         Note that we have to convert to a positive-east Sys III longitude so that PROJ does the right calculations
 
@@ -381,18 +467,30 @@ class Projector:
         :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
 
         :returns: the image in cylindrical projection (shape: nlat, nlon, 3)
-        '''
+        """
 
         # get the coordinate transformation from Cylindrical -> TMerc
         eqcyl = crs.coordinate_operation.EquidistantCylindricalConversion()
-        jupiter_cyl = crs.ProjectedCRS(eqcyl, 'Jupiter Cylindrical', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
+        jupiter_cyl = crs.ProjectedCRS(
+            eqcyl,
+            "Jupiter Cylindrical",
+            crs.coordinate_system.Cartesian2DCS(),
+            jupiter_crs,
+        )
 
         return self.project_to_pyproj(jupiter_cyl, resolution, n_neighbor, max_dist)
 
-    def project_to_cylindrical_fullglobe(self, resolution: float = 50, n_neighbor: int = 10, max_dist: float = 25) -> SpatialData:
+    def project_to_cylindrical_fullglobe(
+        self, resolution: float = 50, n_neighbor: int = 10, max_dist: float = 25
+    ) -> SpatialData:
         # get the coordinate transformation from Cylindrical -> TMerc
         eqcyl = crs.coordinate_operation.EquidistantCylindricalConversion()
-        projection = crs.ProjectedCRS(eqcyl, 'Jupiter Cylindrical', crs.coordinate_system.Cartesian2DCS(), jupiter_crs)
+        projection = crs.ProjectedCRS(
+            eqcyl,
+            "Jupiter Cylindrical",
+            crs.coordinate_system.Cartesian2DCS(),
+            jupiter_crs,
+        )
 
         # get the corresponding lat/lon grid for the image
         lon_grid = np.linspace(0, 360, resolution * 360 + 1, endpoint=True)
@@ -412,63 +510,110 @@ class Projector:
         et = self.framedata.tmid
 
         # get the locations on the image where we have data
-        get_pixel_from_coords_c(np.radians(360 - LON.flatten()), np.radians(LAT.flatten()), LON.size, et, extents, pix)
+        get_pixel_from_coords_c(
+            np.radians(360 - LON.flatten()),
+            np.radians(LAT.flatten()),
+            LON.size,
+            et,
+            extents,
+            pix,
+        )
 
         inds = np.where(np.isfinite(pix[:, 0] * pix[:, 1]))[0]
         pix_masked = pix[inds]
         pixel_inds = np.asarray(range(LON.size))[inds]
 
-        mapi = create_image_from_grid(self.framecoords, self.imagevalues, pixel_inds, pix_masked, LON.shape, n_neighbor=n_neighbor, max_dist=max_dist)
+        mapi = create_image_from_grid(
+            self.framecoords,
+            self.imagevalues,
+            pixel_inds,
+            pix_masked,
+            LON.shape,
+            n_neighbor=n_neighbor,
+            max_dist=max_dist,
+        )
 
         # finally, reshape into the 2D array and return it
-        return SpatialData(self.fname, mapi.reshape((lat_grid.size, lon_grid.size, 3)), projection, lon_grid, lat_grid, lon_grid, lat_grid)
+        return SpatialData(
+            self.fname,
+            mapi.reshape((lat_grid.size, lon_grid.size, 3)),
+            projection,
+            lon_grid,
+            lat_grid,
+            lon_grid,
+            lat_grid,
+        )
 
     @classmethod
-    def load(cls, infile: str, kerneldir: str = './', offline=False):
-        '''Load the object from a netCDF file
+    def load(cls, infile: str, kerneldir: str = "./", offline=False):
+        """Load the object from a netCDF file
 
         :param infile: path to the input .nc file
         :param kerneldir: Path to folder where SPICE kernels will be stored, defaults to "./"
         :param offline: use the kernels stored locally (saves time by not scraping the NAIF servers)
 
         :return: the Projector object with the loaded data and backplane information
-        '''
+        """
 
         self = cls.__new__(cls, find_jitter=False)
 
-        with nc.Dataset(infile, 'r') as indata:
+        with nc.Dataset(infile, "r") as indata:
             self.fname = indata.id
             self.start_utc = indata.start_utc
             self.load_kernels(kerneldir, offline)
 
-            self.framedata = FrameletData.from_file(indata.start_et, indata.sub_lat, indata.sub_lon, indata.frame_delay, indata.exposure,
-                                                    indata.variables['rawimage'][:].astype(float), indata.variables['latitude'][:].astype(float), indata.variables['longitude'][:].astype(float),
-                                                    indata.variables['incidence'][:].astype(float), indata.variables['emission'][:].astype(float),
-                                                    indata.variables['fluxcal'][:].astype(float), indata.variables['coords'][:].astype(float))
+            self.framedata = FrameletData.from_file(
+                indata.start_et,
+                indata.sub_lat,
+                indata.sub_lon,
+                indata.frame_delay,
+                indata.exposure,
+                indata.variables["rawimage"][:].astype(float),
+                indata.variables["latitude"][:].astype(float),
+                indata.variables["longitude"][:].astype(float),
+                indata.variables["incidence"][:].astype(float),
+                indata.variables["emission"][:].astype(float),
+                indata.variables["fluxcal"][:].astype(float),
+                indata.variables["coords"][:].astype(float),
+            )
             self.jitter = indata.jitter
             self.framedata.update_jitter(indata.jitter)
 
         return self
 
     def save(self, outfile: str) -> None:
-        '''Save the projection data to a netCDF file
+        """Save the projection data to a netCDF file
 
         :param outfile: path to the .nc file to save to
-        '''
-        with nc.Dataset(outfile, 'w') as outdata:
-            outdata.createDimension('frames', self.framedata.nframes)
-            outdata.createDimension('colors', 3)
-            outdata.createDimension('width', 1648)
-            outdata.createDimension('height', 128)
-            outdata.createDimension('xy', 2)
+        """
+        with nc.Dataset(outfile, "w") as outdata:
+            outdata.createDimension("frames", self.framedata.nframes)
+            outdata.createDimension("colors", 3)
+            outdata.createDimension("width", 1648)
+            outdata.createDimension("height", 128)
+            outdata.createDimension("xy", 2)
 
-            latitude = outdata.createVariable('latitude', 'float32', ('frames', 'colors', 'height', 'width'))
-            longitude = outdata.createVariable('longitude', 'float32', ('frames', 'colors', 'height', 'width'))
-            incidence = outdata.createVariable('incidence', 'float32', ('frames', 'colors', 'height', 'width'))
-            emission = outdata.createVariable('emission', 'float32', ('frames', 'colors', 'height', 'width'))
-            image = outdata.createVariable('rawimage', 'float32', ('frames', 'colors', 'height', 'width'))
-            fluxcal = outdata.createVariable('fluxcal', 'float32', ('frames', 'colors', 'height', 'width'))
-            coords = outdata.createVariable('coords', 'float32', ('frames', 'colors', 'height', 'width', 'xy'))
+            latitude = outdata.createVariable(
+                "latitude", "float32", ("frames", "colors", "height", "width")
+            )
+            longitude = outdata.createVariable(
+                "longitude", "float32", ("frames", "colors", "height", "width")
+            )
+            incidence = outdata.createVariable(
+                "incidence", "float32", ("frames", "colors", "height", "width")
+            )
+            emission = outdata.createVariable(
+                "emission", "float32", ("frames", "colors", "height", "width")
+            )
+            image = outdata.createVariable(
+                "rawimage", "float32", ("frames", "colors", "height", "width")
+            )
+            fluxcal = outdata.createVariable(
+                "fluxcal", "float32", ("frames", "colors", "height", "width")
+            )
+            coords = outdata.createVariable(
+                "coords", "float32", ("frames", "colors", "height", "width", "xy")
+            )
 
             outdata.id = self.fname
             outdata.start_utc = self.start_utc
@@ -479,8 +624,12 @@ class Projector:
             outdata.sub_lon = self.framedata.sclon
             outdata.exposure = self.framedata.exposure
 
-            rawimg = np.stack([frame.rawimg for frame in self.framedata.framelets], axis=0).reshape((self.framedata.nframes, 3, 128, 1648))
-            fcal = np.stack([frame.fluxcal for frame in self.framedata.framelets], axis=0).reshape((self.framedata.nframes, 3, 128, 1648))
+            rawimg = np.stack(
+                [frame.rawimg for frame in self.framedata.framelets], axis=0
+            ).reshape((self.framedata.nframes, 3, 128, 1648))
+            fcal = np.stack(
+                [frame.fluxcal for frame in self.framedata.framelets], axis=0
+            ).reshape((self.framedata.nframes, 3, 128, 1648))
 
             latitude[:] = self.framedata.latitude[:]
             longitude[:] = self.framedata.longitude[:]
@@ -491,27 +640,35 @@ class Projector:
             coords[:] = self.framedata.coords[:]
 
 
-def apply_lommel_seeliger(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray) -> np.ndarray:
-    '''Apply the Lommel-Seeliger correction for incidence
+def apply_lommel_seeliger(
+    imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray
+) -> np.ndarray:
+    """Apply the Lommel-Seeliger correction for incidence
 
     :param imgvals: the raw image values
     :param incidence: the incidence angles (in radians) for each pixel in `imgvals`
     :param emission: the emission angles (in radians) for each pixel in `imgvals`
 
     :return: the corrected image values with the same shape as `imgvals`
-    '''
+    """
     # apply Lommel-Seeliger correction
     mu0 = np.cos(incidence)
     mu = np.cos(emission)
-    corr = 1. / (mu + mu0)
+    corr = 1.0 / (mu + mu0)
     corr[np.abs(incidence) > np.radians(89.9)] = np.nan
     imgvals = imgvals * corr
-    imgvals[~np.isfinite(imgvals)] = 0.
+    imgvals[~np.isfinite(imgvals)] = 0.0
 
     return imgvals
 
 
-def apply_minnaert(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndarray, k: float = 1.05, trim=-8) -> np.ndarray:
+def apply_minnaert(
+    imgvals: np.ndarray,
+    incidence: np.ndarray,
+    emission: np.ndarray,
+    k: float = 1.05,
+    trim=-8,
+) -> np.ndarray:
     """Apply the Minnaert illumination correction
 
     :param imgvals: the raw image values
@@ -524,18 +681,25 @@ def apply_minnaert(imgvals: np.ndarray, incidence: np.ndarray, emission: np.ndar
     # apply Minnaert correction
     mu0 = np.cos(incidence)
     mu = np.cos(emission)
-    corr = (mu ** k) * (mu0 ** (k - 1))
+    corr = (mu**k) * (mu0 ** (k - 1))
     # log(mu * mu0) < -4 is usually pretty noisy
     corr[np.log(np.cos(incidence) * np.cos(emission)) < trim] = np.inf
     imgvals = imgvals / corr
-    imgvals[~np.isfinite(imgvals)] = 0.
+    imgvals[~np.isfinite(imgvals)] = 0.0
 
     return imgvals
 
 
-def create_image_from_grid(coords: np.ndarray, imgvals: np.ndarray, inds: np.ndarray, pix: np.ndarray,
-                           img_shape: tuple[int], n_neighbor: int = 5, max_dist: float = 25.):
-    '''
+def create_image_from_grid(
+    coords: np.ndarray,
+    imgvals: np.ndarray,
+    inds: np.ndarray,
+    pix: np.ndarray,
+    img_shape: tuple[int],
+    n_neighbor: int = 5,
+    max_dist: float = 25.0,
+):
+    """
         Reproject an irregular spaced image onto a regular grid from a list of coordinate
         locations and corresponding image values. This uses an inverse lookup-table defined
         by `pix`, where pix gives the coordinates in the original image where the corresponding
@@ -551,7 +715,7 @@ def create_image_from_grid(coords: np.ndarray, imgvals: np.ndarray, inds: np.nda
     :param max_dist: the largest distance between neighbours to use for interpolation, defaults to 25 pixels
 
     :return: the interpolated new image of shape `img_shape` where every pixel at `inds` has corresponding values interpolated from `imgvals`
-    '''
+    """
     nchannels, ncoords, _ = coords.shape
 
     newvals = np.zeros((nchannels, pix.shape[0]))
@@ -560,15 +724,15 @@ def create_image_from_grid(coords: np.ndarray, imgvals: np.ndarray, inds: np.nda
         mask = np.isfinite(coords[n, :, 0] * coords[n, :, 1])
         neighbors = NearestNeighbors().fit(coords[n][mask])
         dist, indi = neighbors.kneighbors(pix, n_neighbor)
-        weight = 1. / (dist + 1.e-16)
+        weight = 1.0 / (dist + 1.0e-16)
         weight = weight / np.sum(weight, axis=1, keepdims=True)
-        weight[dist > max_dist] = 0.
+        weight[dist > max_dist] = 0.0
 
         newvals[n, :] = np.sum(np.take(imgvals[n][mask], indi, axis=0) * weight, axis=1)
 
     IMG = np.zeros((*img_shape, nchannels))
     # loop through each point observed by JunoCam and assign the pixel value
-    for k, ind in enumerate(tqdm.tqdm(inds, desc='Building image')):
+    for k, ind in enumerate(tqdm.tqdm(inds, desc="Building image")):
         if len(img_shape) == 2:
             j, i = np.unravel_index(ind, img_shape)
 
@@ -579,6 +743,6 @@ def create_image_from_grid(coords: np.ndarray, imgvals: np.ndarray, inds: np.nda
             for n in range(nchannels):
                 IMG[ind, n] = newvals[n, k]
 
-    IMG[~np.isfinite(IMG)] = 0.
+    IMG[~np.isfinite(IMG)] = 0.0
 
     return np.flip(IMG, axis=-1)
