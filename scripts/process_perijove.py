@@ -39,12 +39,12 @@ for file in files:
         logger.info(f"Found {os.path.basename(backplane_fname)}")
         proj = Projector.load(backplane_fname, args.kernel_folder)
         proj.apply_correction('ls')
-        pc_data = proj.project_to_cylindrical_fullglobe(resolution=args.map_resolution)
     else:
         logger.info(f"Projecting {fname}")
         proj = Projector(args.image_folder, file, args.kernel_folder)
         proj.process(num_procs=args.num_processes, apply_correction='ls')
         proj.save(backplane_fname)
-        pc_data = proj.project_to_cylindrical_fullglobe(resolution=args.map_resolution)
+
+    pc_data = proj.project_to_cylindrical_fullglobe(resolution=args.map_resolution)
 
     np.save(os.path.join(args.map_folder, f'{fname}_map.npy'), pc_data.image / pc_data.image.max())
