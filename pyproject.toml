@@ -38,3 +38,6 @@ readme = "README.md"
 
 [project.urls]
 repository = "https://www.github.com/ramanakumars/JunoCamProjection"
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
