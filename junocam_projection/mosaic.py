@@ -154,6 +154,7 @@ def blend_maps(
         mapi[~np.isfinite(mapi)] = 0.0
 
         maps_filtered[i] = mapi
+
     footprint = np.clip(footprints.sum(0), 0, 1)
 
     print("Creating initial mosaic")
@@ -172,10 +173,9 @@ def blend_maps(
         highpass_data[i] = highpass(mapi, sigma_filter) * footprints[i]
 
         # trim the edges again since we tend to end up with certain peaks
-        highpass_data[i][
-            highpass_data[i]
-            > np.percentile(highpass_data[i][np.abs(highpass_data[i]) > 0], 99)
-        ] = 0.0
+
+        if np.abs(highpass_data[i]).max() > 0:
+            highpass_data[i][highpass_data[i] > np.percentile(highpass_data[i][np.abs(highpass_data[i]) > 0], 99)] = 0.
 
     # create a mosaic using the high-pass data
     print("Creating high-pass mosaic")
