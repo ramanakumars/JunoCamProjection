@@ -6,7 +6,7 @@ import re
 import fnmatch
 import tqdm
 
-BASEURL = 'https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/'
+BASEURL = "https://naif.jpl.nasa.gov/pub/naif/JUNO/kernels/"
 
 
 def fetch_kernels_from_https(path: str, pattern: str) -> list[str]:
@@ -18,8 +18,8 @@ def fetch_kernels_from_https(path: str, pattern: str) -> list[str]:
     :return: list of files that match the given pattern
     """
     with requests.get(path) as response:
-        soup = BeautifulSoup(response.text, 'html.parser')
-    kernels_all = [a['href'] for a in soup.find('pre').find_all('a')]
+        soup = BeautifulSoup(response.text, "html.parser")
+    kernels_all = [a["href"] for a in soup.find("pre").find_all("a")]
     files = fnmatch.filter(kernels_all, pattern)
     basefolder = os.path.split(os.path.normpath(path))[-1]
     return [os.path.join(basefolder, file) for file in files]
@@ -33,7 +33,10 @@ def fetch_kernels_from_disk(path: str, pattern: str) -> list[str]:
 
     :return: list of files that match the given pattern
     """
-    return [file.replace(path, "") for file in sorted(glob.glob(os.path.join(path, pattern)))]
+    return [
+        file.replace(path, "")
+        for file in sorted(glob.glob(os.path.join(path, pattern)))
+    ]
 
 
 def check_and_download_kernels(kernels: list[str], KERNEL_DATAFOLDER: str) -> list[str]:
@@ -64,19 +67,29 @@ def download_kernel(kernel: str, KERNEL_DATAFOLDER: str) -> None:
     with open(file_name, "wb") as f:
         print("Downloading %s" % file_name)
         response = requests.get(link, stream=True)
-        total_length = response.headers.get('content-length')
+        total_length = response.headers.get("content-length")
 
         if total_length is None:  # no content length header
             f.write(response.content)
         else:
             total_length = int(total_length)
-            with tqdm.tqdm(total=total_length, unit='B', unit_scale=True, dynamic_ncols=True, unit_divisor=1024, ascii=True, desc=f'Downloading {kernel}') as pbar:
+            with tqdm.tqdm(
+                total=total_length,
+                unit="B",
+                unit_scale=True,
+                dynamic_ncols=True,
+                unit_divisor=1024,
+                ascii=True,
+                desc=f"Downloading {kernel}",
+            ) as pbar:
                 for data in tqdm.tqdm(response.iter_content(chunk_size=4096)):
                     f.write(data)
                     pbar.update(len(data))
 
 
-def get_kernels(KERNEL_DATAFOLDER: str, start_utc: float, offline: bool = False) -> list[str]:
+def get_kernels(
+    KERNEL_DATAFOLDER: str, start_utc: float, offline: bool = False
+) -> list[str]:
     """Fetch all relevant kernels for JunoCam at a given time
 
     :param KERNEL_DATAFOLDER: path to the local kernel directory to store downloaded kernels
@@ -88,7 +101,7 @@ def get_kernels(KERNEL_DATAFOLDER: str, start_utc: float, offline: bool = False)
     if not os.path.exists(KERNEL_DATAFOLDER):
         os.mkdir(KERNEL_DATAFOLDER)
 
-    for folder in ['ik', 'ck', 'spk', 'pck', 'fk', 'lsk', 'sclk']:
+    for folder in ["ik", "ck", "spk", "pck", "fk", "lsk", "sclk"]:
         if not os.path.exists(os.path.join(KERNEL_DATAFOLDER, folder)):
             os.mkdir(os.path.join(KERNEL_DATAFOLDER, folder))
 
