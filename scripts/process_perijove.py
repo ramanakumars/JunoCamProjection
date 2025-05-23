@@ -49,6 +49,10 @@ parser.add_argument(
     "--kernel_folder", help="Path to store SPICE kernels", type=str, default="./kernels"
 )
 
+parser.add_argument(
+    "--skip", help="Skip if map file exists", action="store_true", default=False
+)
+
 args = parser.parse_args()
 
 KERNEL_DATAFOLDER = "./kernels/"
@@ -68,7 +72,7 @@ for file in files:
     backplane_fname = os.path.join(args.backplane_folder, f"{fname}.nc")
     if os.path.exists(backplane_fname):
         logger.info(f"Found {os.path.basename(backplane_fname)}")
-        proj = Projector.load(backplane_fname, args.kernel_folder)
+        proj = Projector.load(backplane_fname, args.kernel_folder, offline=True)
         proj.apply_correction('ls')
     else:
         logger.info(f"Projecting {fname}")
@@ -76,9 +80,14 @@ for file in files:
         proj.process(num_procs=args.num_processes, apply_correction="ls")
         proj.save(backplane_fname)
 
+    outfile = os.path.join(args.map_folder, f"{fname}_map.npy")
+    if os.path.exists(outfile) and args.skip:
+        logger.info("Skipping...")
+        continue
+
     pc_data = proj.project_to_cylindrical_fullglobe(resolution=args.map_resolution)
 
     np.save(
-        os.path.join(args.map_folder, f"{fname}_map.npy"),
+        outfile,
         pc_data.image / pc_data.image.max(),
     )
