@@ -2,24 +2,44 @@
 
 [<img src="https://readthedocs.org/projects/junocamprojection/badge/?version=latest&style=flat-default">](https://junocamprojection.readthedocs.io/en/latest/)
 
-This is a tool to process and project JunoCam images onto a lat/lon grid. 
+This is a tool to process and project JunoCam images onto a lat/lon grid.
+
+>[!NOTE]
+>The C extension will only run on Linux amd64
 
 ## Dependencies
-Install the python dependencies using the `requirements.txt`:
-
+Install uv:
 ```bash
-pip3 install -r requirements.txt
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Install the python dependencies using the `uv sync`:
+```bash
+uv sync
 ```
 
 ## Installation
 To run the projection code, the C extension needs to be compiled. To do this, run,
 ```bash
-cd projection/
+cd junocam_projection/
 make clean
 make
 ```
 
+Then, install the package using a Python package manager. For example:
+
+```bash
+pip3 install .
+```
+
+This will install the `junocam_projection` package into your Python environment. 
+
 ## Examples
+
+To run the jupyter notebook:
+```bash
+uv run --with jupyter jupyter lab
+```
 
 ### Projecting a single image 
 
