@@ -1,19 +1,26 @@
-import numpy as np
 import json
+
+import matplotlib.pyplot as plt
 import netCDF4 as nc
+import numpy as np
+import spiceypy as spice
+import tqdm
+from pyproj import crs
+from pyproj.transformer import Transformer
 from skimage import feature
 from sklearn.metrics import pairwise_distances
 from sklearn.neighbors import NearestNeighbors
-import matplotlib.pyplot as plt
-import spiceypy as spice
-import tqdm
-from .cython_utils import furnish_c, get_pixel_from_coords_c
+
 from .camera_funcs import CameraModel
-from .spice_utils import get_kernels
+from .cython_utils import furnish_c, get_pixel_from_coords_c
 from .frameletdata import FrameletData
 from .spatial import SpatialData, jupiter_crs
-from pyproj import crs
-from pyproj.transformer import Transformer
+from .spice_utils import get_kernels
+
+
+class LimbNotFoundError(ValueError):
+    def __init__(self, message):
+        super().__init__(message)
 
 
 class Projector:
@@ -100,6 +107,10 @@ class Projector:
                 if len(limb_pts) > 5:
                     break
 
+        # if there is no limb found in the image, exit out
+        if len(limb_pts) < 1:
+            raise LimbNotFoundError("Limb not found in image!")
+
         # create the mask of the visible jupiter in the image
         imgmask = np.zeros_like(frame)
         imgmask[frame > threshold] = 1
@@ -122,8 +133,6 @@ class Projector:
             limb_img_points[:, 0] += 24
             npoints = len(limb_img_points)
             sigma -= 1
-
-        distances = pairwise_distances(limb_pts, limb_img_points)
 
         if plot:
             plt.plot(limb_img_points[:, 0], limb_img_points[:, 1], "g-")
@@ -150,10 +159,7 @@ class Projector:
                 plt.imshow(frame, cmap="gray")
                 plt.plot(limbs_jcam[:, 0], limbs_jcam[:, 1], "r.", markersize=0.1)
                 plt.plot(
-                    limb_img_points[:, 0],
-                    limb_img_points[:, 1],
-                    "g.",
-                    markersize=0.1,
+                    limb_img_points[:, 0], limb_img_points[:, 1], "g.", markersize=0.1
                 )
                 plt.show()
 

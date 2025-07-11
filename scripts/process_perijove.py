@@ -1,10 +1,12 @@
-from junocam_projection.projector import Projector
-import numpy as np
-import glob
-import os
-import json
 import argparse
+import glob
+import json
 import logging
+import os
+
+import numpy as np
+
+from junocam_projection.projector import LimbNotFoundError, Projector
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
@@ -76,7 +78,11 @@ for file in files:
         proj.apply_correction('ls')
     else:
         logger.info(f"Projecting {fname}")
-        proj = Projector(args.image_folder, file, args.kernel_folder)
+        try:
+            proj = Projector(args.image_folder, file, args.kernel_folder)
+        except LimbNotFoundError as e:
+            print(e)
+            continue
         proj.process(num_procs=args.num_processes, apply_correction="ls")
         proj.save(backplane_fname)
 
@@ -87,7 +93,4 @@ for file in files:
 
     pc_data = proj.project_to_cylindrical_fullglobe(resolution=args.map_resolution)
 
-    np.save(
-        outfile,
-        pc_data.image / pc_data.image.max(),
-    )
+    np.save(outfile, pc_data.image / pc_data.image.max())
